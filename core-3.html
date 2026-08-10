@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Archivo Central: Impacto Humano y Territorio</title>
+
+<!--
+  ============================================================================
+  ARCHIVO CENTRAL DE MEMORIA — v7 (Fase III: Panel de Decisiones Sistémicas)
+  Experiencia interactiva sobre el conflicto armado colombiano.
+
+  NOVEDAD DE ESTA VERSIÓN — Cambio de mecánica de juego:
+    Las Fases I y II usaban un tablero de arrastrar-y-soltar (causas y
+    consecuencias sueltas que se vinculaban a expedientes fijos). La Fase III
+    evoluciona esa mecánica hacia un "Panel de Decisiones Sistémicas": el
+    Investigador lee un escenario de alta tensión histórica (Experimento
+    Mental) y elige, entre tres desenlaces posibles, el más realista según
+    el contexto de la época — no el más idealista.
+
+    Por eso, en esta versión:
+      · Se ELIMINÓ por completo el motor de arrastre/toque de piezas, las
+        bandejas, las zonas de destino y la capa SVG de hilos rojos.
+      · Se AGREGÓ un motor de escenarios: una tarjeta central con el caso,
+        y opciones de decisión (A/B/C, en orden aleatorio) como botones.
+        Elegir la opción correcta cierra el escenario ("VERIFICADO");
+        elegir una incorrecta dispara la misma Nota de Archivo fail-smart
+        de siempre, sin penalización, y permite reintentar.
+
+    Módulo 3.1 — El Desarraigo y el Territorio
+    Módulo 3.2 — La Resiliencia y el Tejido Social
+
+  Arquitectura modular (sin cambios): CONTENT.modules es un arreglo; cada
+  módulo trae su introducción, sus escenarios (`nodes`, uno o más) y su
+  documento de Dossier. El stepper de módulos, el Dossier con desbloqueo
+  progresivo y el banner de cierre de fase se conservan intactos.
+
+  Se conserva íntegro el arreglo mobile-first de las versiones anteriores:
+    · Scroll vertical nativo libre en todo momento.
+    · Objetivos táctiles ≥44px, Dossier como hoja inferior en móvil.
+    · Mismos tokens de diseño y tipografías (Courier Prime, Special Elite).
+
+  Estructura del archivo:
+    1. <style>  → Diseño mobile-first "tablero de investigación / archivo"
+    2. <body>   → Esqueleto semántico
+    3. <script> → CONTENT (datos por módulo) + motor de render/módulos +
+                   motor de decisiones + fail-smart
+  ============================================================================
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+  /* ==========================================================================
+     1. TOKENS DE DISEÑO
+     ========================================================================== */
+  :root{
+    --wood-dark:   #201207;
+    --wood-mid:    #3a2513;
+    --cork:        #c8a066;
+    --paper:       #eee0bd;
+    --paper-2:     #e4d3a8;
+    --paper-edge:  #cbb181;
+    --ink:         #2c2013;
+    --ink-soft:    #5c4a30;
+    --red-string:  #9c2a20;
+    --brass:       #c79a53;
+    --warn:        #b85b22;
+    --shadow:      rgba(20,12,4,0.55);
+    --tap-min:     44px;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0; padding:0; min-height:100%;
+    background: var(--wood-dark);
+    color: var(--ink);
+    font-family:'Courier Prime', 'Courier New', monospace;
+    font-size:16px;
+    touch-action:manipulation; /* permite el paneo normal; solo suprime doble-toque zoom */
+    -webkit-text-size-adjust:100%;
+  }
+
+  .grain-overlay{
+    position:fixed; inset:0; pointer-events:none; z-index:999;
+    opacity:.06; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ==========================================================================
+     2. ESCRITORIO / MARCO — base MÓVIL
+     ========================================================================== */
+  .desk{
+    max-width:1200px; margin:0 auto; padding:1.25rem .85rem 6rem;
+    background:
+      radial-gradient(ellipse at top, rgba(255,255,255,.04), transparent 60%),
+      linear-gradient(180deg, var(--wood-mid), var(--wood-dark));
+  }
+
+  .archive-header{
+    position:relative;
+    max-width:880px; margin:0 auto 1.5rem;
+    background: var(--paper);
+    border:1px solid var(--paper-edge);
+    border-radius: 2px 8px 3px 10px / 6px 2px 10px 3px;
+    padding:1.5rem 1.25rem 1.25rem;
+    box-shadow: 0 12px 24px var(--shadow), inset 0 0 40px rgba(120,90,40,.12);
+    text-align:center;
+  }
+  .tape{ position:absolute; width:70px; height:22px; top:-10px; background:rgba(232,222,190,.6); box-shadow:0 2px 3px rgba(0,0,0,.35); }
+  .tape-left{ left:20px; transform:rotate(-7deg); }
+  .tape-right{ right:20px; transform:rotate(6deg); }
+
+  .eyebrow{ font-family:'Special Elite', monospace; letter-spacing:.14em; font-size:.68rem; color:var(--ink-soft); margin:.25rem 0 .55rem; }
+  .archive-header h1{ font-family:'Special Elite', monospace; font-size:clamp(1.3rem, 6vw, 2.3rem); margin:0 0 .75rem; color:var(--ink); text-shadow:1px 1px 0 rgba(255,255,255,.25); line-height:1.15; }
+  .role-briefing{ font-size:.92rem; line-height:1.55; color:var(--ink); max-width:640px; margin:0 auto .7rem; }
+  .instructions{ font-family:'Kalam', cursive; font-size:1rem; color:var(--red-string); margin:0; }
+
+  /* ---- Botón de Dossier: FAB circular en móvil ---- */
+  .dossier-btn{
+    position:fixed;
+    right:calc(1rem + env(safe-area-inset-right));
+    bottom:calc(1rem + env(safe-area-inset-bottom));
+    z-index:150;
+    width:60px; height:60px; min-width:var(--tap-min); min-height:var(--tap-min);
+    display:flex; align-items:center; justify-content:center; gap:.4rem;
+    background:var(--red-string); color:var(--paper);
+    border:none; border-radius:50%;
+    font-family:'Special Elite', monospace; font-size:.78rem; letter-spacing:.03em;
+    cursor:pointer; box-shadow:0 10px 24px rgba(0,0,0,.55);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .dossier-btn:active{ transform:scale(.95); }
+  .dossier-btn:focus-visible{ outline:3px solid #fff; outline-offset:3px; }
+  .dossier-btn .ribbon{ display:none; }
+  .dossier-btn .label{ display:none; }
+  .dossier-btn svg{ width:24px; height:24px; }
+
+  /* ---- Tablero principal (corcho) ---- */
+  .board{
+    position:relative;
+    background-color:var(--cork);
+    background-image:
+      repeating-linear-gradient(45deg, rgba(90,62,26,.10) 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(-45deg, rgba(90,62,26,.10) 0 2px, transparent 2px 7px),
+      radial-gradient(circle at 18% 22%, rgba(255,255,255,.10), transparent 45%);
+    border-radius:6px;
+    box-shadow: inset 0 0 60px rgba(40,25,8,.55), 0 14px 30px var(--shadow);
+    padding:1.5rem .9rem 1.1rem;
+  }
+
+  /* ---- Progreso de la Fase: indicador de módulos ---- */
+  .module-stepper{
+    display:flex; align-items:center; justify-content:center;
+    gap:.35rem; flex-wrap:wrap; margin:0 0 1.1rem;
+  }
+  .step{ display:flex; align-items:center; gap:.4rem; font-family:'Special Elite', monospace; font-size:.66rem; letter-spacing:.03em; color:#4a3419; opacity:.55; transition:opacity .2s ease; }
+  .step-dot{ width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,.15); color:#3a2a10; display:flex; align-items:center; justify-content:center; font-size:.7rem; border:2px solid transparent; flex-shrink:0; }
+  .step-active{ opacity:1; }
+  .step-active .step-dot{ background:var(--red-string); color:#f5e6c8; border-color:#f5e6c8; }
+  .step-done{ opacity:.85; }
+  .step-done .step-dot{ background:var(--ink); color:var(--paper); }
+  .step-connector{ width:22px; height:2px; background:rgba(0,0,0,.2); flex-shrink:0; }
+  .step-connector.done{ background:var(--ink); }
+  .step-label{ white-space:nowrap; }
+
+  /* ---- Introducción del módulo activo ---- */
+  .module-intro{
+    background:rgba(255,255,255,.22); border:1px dashed var(--paper-edge);
+    border-radius:6px; padding:1rem 1.1rem; margin-bottom:1.1rem;
+    text-align:center;
+  }
+  .module-kicker{ font-family:'Special Elite', monospace; font-size:.7rem; letter-spacing:.1em; color:#4a341a; margin:0 0 .3rem; }
+  .module-title{ font-family:'Special Elite', monospace; font-size:1.05rem; margin:0 0 .4rem; color:#2c2013; }
+  .module-focus{ font-size:.85rem; line-height:1.5; margin:0; color:#3a2a15; }
+
+  /* ---- Panel de trabajo: escenario + opciones de decisión ---- */
+  .workspace{ max-width:640px; margin:0 auto; position:relative; }
+
+  .scenario-card{
+    position:relative; background:var(--paper-2);
+    border:1px solid var(--paper-edge);
+    border-radius:4px 10px 4px 10px / 8px 4px 8px 4px;
+    padding:1.4rem 1.1rem 1.2rem;
+    box-shadow:0 14px 22px rgba(0,0,0,.4);
+  }
+  .case-tab{ position:absolute; top:-15px; left:1rem; background:#3a2510; color:#e9d6a5; font-family:'Special Elite', monospace; font-size:.66rem; letter-spacing:.06em; padding:.3rem .65rem; clip-path:polygon(6% 0,94% 0,100% 100%,0% 100%); max-width:80%; }
+  .case-pin{ position:absolute; top:-11px; right:1.3rem; width:16px; height:16px; border-radius:50%; background:radial-gradient(circle at 30% 30%, #f0a99a, var(--red-string) 70%); box-shadow:0 2px 4px rgba(0,0,0,.5); }
+  .scenario-label{ font-family:'Special Elite', monospace; font-size:.7rem; letter-spacing:.1em; color:var(--ink-soft); margin:.7rem 0 .35rem; }
+  .scenario-text{ font-weight:700; font-size:1rem; line-height:1.55; margin:0; color:var(--ink); }
+
+  .decision-options{ display:flex; flex-direction:column; gap:.85rem; margin-top:1.1rem; }
+
+  .decision-option{
+    display:flex; align-items:flex-start; flex-wrap:wrap; gap:.7rem;
+    width:100%; text-align:left;
+    background:var(--paper); border:1px solid var(--paper-edge);
+    border-radius: 2px 6px 3px 7px / 6px 2px 7px 3px;
+    padding:.9rem .95rem;
+    min-height:var(--tap-min);
+    font-family:'Courier Prime', 'Courier New', monospace;
+    font-size:.9rem; line-height:1.5; color:var(--ink);
+    cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,.35);
+    transition: transform .15s ease, box-shadow .15s ease, opacity .2s ease;
+  }
+  .option-label{
+    flex-shrink:0; width:26px; height:26px; border-radius:50%;
+    background:rgba(0,0,0,.12); color:#3a2a10;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Special Elite', monospace; font-size:.76rem;
+  }
+  .option-text{ flex:1; min-width:0; }
+  .decision-option:focus-visible{ outline:3px solid var(--red-string); outline-offset:2px; }
+  .decision-option:disabled{ cursor:default; opacity:.5; }
+  .decision-option.correct{
+    border-color:var(--red-string); border-width:2px; background:var(--paper-2);
+    opacity:1;
+  }
+  .decision-option.correct .option-label{ background:var(--red-string); color:#f5e6c8; }
+  .decision-option.shake{ animation:shake .5s ease; border-color:var(--warn); }
+  .decision-option .stamp{ flex-basis:100%; margin:.4rem 0 0 2.15rem; width:fit-content; }
+
+  @keyframes shake{
+    10%,90%{ transform:translateX(-1px); }
+    20%,80%{ transform:translateX(3px); }
+    30%,50%,70%{ transform:translateX(-6px); }
+    40%,60%{ transform:translateX(6px); }
+  }
+
+  .stamp{ display:inline-block; margin-top:.5rem; padding:.15rem .5rem; border:2px solid var(--red-string); border-radius:3px; color:var(--red-string); font-family:'Special Elite', monospace; font-size:.7rem; letter-spacing:.06em; transform:rotate(-9deg); animation:stampIn .4s ease-out; }
+  @keyframes stampIn{ 0%{ transform:scale(3) rotate(-16deg); opacity:0; } 60%{ transform:scale(.9) rotate(-7deg); opacity:1; } 100%{ transform:scale(1) rotate(-9deg); opacity:1; } }
+
+  /* ---- Tarjeta de cierre de módulo (checkpoint intermedio) ---- */
+  .module-complete-card{
+    margin-top:1.1rem; background:var(--paper); border:2px solid var(--red-string);
+    border-radius:4px 10px 4px 10px / 8px 4px 8px 4px; padding:1.3rem 1.1rem;
+    text-align:center; box-shadow:0 14px 24px rgba(0,0,0,.4); animation:stampIn .4s ease-out;
+  }
+  .module-complete-card p{ margin:0 0 1rem; font-size:.9rem; line-height:1.5; color:var(--ink); }
+
+  .board-footer{ text-align:center; margin-top:1.75rem; color:#e9d6a5; }
+  .progress-track{ width:min(420px, 92%); height:9px; margin:0 auto .6rem; background:rgba(0,0,0,.4); border-radius:5px; overflow:hidden; }
+  .progress-fill{ height:100%; width:0%; background:var(--red-string); transition:width .35s ease; }
+  #progressText{ font-family:'Special Elite', monospace; font-size:.85rem; margin:.2rem 0; }
+  .folio{ font-size:.7rem; opacity:.6; margin-top:.4rem; }
+
+  /* ==========================================================================
+     3. NOTA DE ARCHIVO — retroalimentación "fail smart"
+     ========================================================================== */
+  .note-backdrop{ position:fixed; inset:0; background:rgba(10,6,2,.6); display:none; align-items:center; justify-content:center; z-index:300; padding:1rem; }
+  .note-backdrop.show{ display:flex; }
+  .archive-note{ position:relative; max-width:420px; width:100%; background:var(--paper); border:1px solid var(--paper-edge); border-radius:2px 8px 3px 10px / 6px 2px 10px 3px; padding:1.8rem 1.4rem 1.3rem; box-shadow:0 20px 40px rgba(0,0,0,.6); transform:rotate(-1deg); max-height:85vh; overflow-y:auto; }
+  .note-pin{ position:absolute; top:-14px; left:50%; transform:translateX(-50%); width:18px; height:18px; border-radius:50%; background:radial-gradient(circle at 30% 30%, #e2b45c, var(--brass) 70%); box-shadow:0 2px 4px rgba(0,0,0,.55); }
+  .archive-note h3{ font-family:'Special Elite', monospace; font-size:1rem; margin:0 0 .7rem; color:var(--red-string); text-align:center; }
+  .archive-note p{ font-family:'Kalam', cursive; font-size:1.08rem; line-height:1.5; color:var(--ink); margin:0 0 1.1rem; }
+  .btn-ink{ display:flex; align-items:center; justify-content:center; min-height:var(--tap-min); margin:0 auto; padding:.55rem 1.2rem; background:var(--ink); color:var(--paper); font-family:'Special Elite', monospace; font-size:.8rem; border:none; border-radius:4px; cursor:pointer; letter-spacing:.03em; transition:transform .12s ease, background .15s ease; }
+  .btn-ink:hover{ background:#463420; }
+  .btn-ink:active{ transform:scale(.97); }
+
+  .completion-banner{ position:fixed; inset:0; background:rgba(10,6,2,.72); display:none; align-items:center; justify-content:center; z-index:400; padding:1.1rem; }
+  .completion-banner.show{ display:flex; }
+  .completion-inner{ max-width:520px; max-height:85vh; overflow-y:auto; background:var(--paper); border:1px solid var(--paper-edge); border-radius:6px; padding:2rem 1.6rem; text-align:center; box-shadow:0 25px 50px rgba(0,0,0,.6); }
+  .completion-inner h2{ font-family:'Special Elite', monospace; color:var(--red-string); margin:0 0 .8rem; font-size:1.3rem; }
+  .completion-inner p{ line-height:1.55; margin:0 0 1.3rem; }
+
+  /* ==========================================================================
+     4. DOSSIER TEÓRICO — hoja inferior en móvil, con desbloqueo progresivo
+     ========================================================================== */
+  .dossier-backdrop{ position:fixed; inset:0; background:rgba(10,6,2,.55); opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:240; }
+  .dossier-backdrop.open{ opacity:1; pointer-events:auto; }
+
+  .dossier-panel{
+    position:fixed; left:0; right:0; bottom:0; top:auto;
+    width:100%; max-height:88vh;
+    background:var(--paper); border-top:1px solid var(--paper-edge);
+    border-radius:18px 18px 0 0;
+    box-shadow:0 -14px 34px rgba(0,0,0,.55);
+    transform:translateY(100%); transition:transform .32s ease;
+    z-index:250; overflow-y:auto;
+    padding:.75rem 1.25rem calc(2rem + env(safe-area-inset-bottom));
+  }
+  .dossier-panel.open{ transform:translateY(0); }
+
+  .sheet-handle{ width:42px; height:5px; border-radius:3px; background:var(--paper-edge); margin:0 auto .9rem; }
+
+  .dossier-panel-header{ position:relative; margin-bottom:1.1rem; padding-bottom:.85rem; border-bottom:2px dashed var(--paper-edge); }
+  .dossier-panel-header .eyebrow{ margin-bottom:.3rem; }
+  .dossier-panel-header h2{ font-family:'Special Elite', monospace; font-size:1.15rem; margin:0; color:var(--ink); }
+  .dossier-close{
+    position:absolute; top:-.4rem; right:-.3rem;
+    width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+    background:none; border:none;
+    font-family:'Special Elite', monospace; font-size:1.4rem; color:var(--ink-soft);
+    cursor:pointer; line-height:1;
+  }
+  .dossier-close:hover, .dossier-close:focus-visible{ color:var(--red-string); outline:none; }
+
+  .dossier-doc{ position:relative; background:rgba(255,255,255,.35); border:1px solid var(--paper-edge); border-radius:2px 6px 2px 6px; padding:1rem 1rem 1rem 1.2rem; margin-bottom:1rem; border-left:4px solid var(--red-string); transition:opacity .2s ease; }
+  .dossier-doc.locked{ opacity:.6; border-left-color:var(--ink-soft); }
+  .doc-stamp{ position:absolute; top:.55rem; right:.6rem; font-family:'Special Elite', monospace; font-size:.6rem; letter-spacing:.08em; color:var(--red-string); border:1.5px solid var(--red-string); border-radius:2px; padding:.1rem .35rem; transform:rotate(-8deg); opacity:.85; }
+  .doc-stamp.locked{ color:var(--ink-soft); border-color:var(--ink-soft); }
+  .dossier-doc h3{ font-family:'Special Elite', monospace; font-size:.86rem; margin:0 .1rem .55rem; padding-right:4.6rem; color:var(--ink); }
+  .dossier-doc p{ font-size:.86rem; line-height:1.55; margin:0; color:var(--ink); text-align:left; }
+  .doc-locked-msg{ font-style:italic; color:var(--ink-soft); }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+  }
+
+  @media (hover:hover) and (pointer:fine){
+    .decision-option:hover:not(:disabled){ transform:translateY(-2px); box-shadow:0 10px 16px rgba(0,0,0,.45); }
+    .dossier-btn:hover{ transform:translateY(-2px); box-shadow:0 14px 26px rgba(0,0,0,.5); }
+  }
+
+  /* ==========================================================================
+     5. PUNTO DE QUIEBRE ÚNICO → ESCRITORIO
+     ========================================================================== */
+  @media (min-width: 769px){
+    .desk{ padding:2rem 1.25rem 3rem; }
+
+    .archive-header{ padding:1.75rem 2rem 1.5rem; margin-bottom:2.25rem; }
+    .tape{ width:90px; height:28px; top:-12px; }
+    .tape-left{ left:36px; }
+    .tape-right{ right:36px; }
+    .eyebrow{ font-size:.72rem; letter-spacing:.18em; }
+    .archive-header h1{ font-size:clamp(1.5rem, 3.6vw, 2.3rem); }
+    .role-briefing{ font-size:.95rem; }
+    .instructions{ font-size:.95rem; }
+
+    .dossier-btn{
+      top:1rem; bottom:auto; right:1rem;
+      width:auto; height:auto; border-radius:4px;
+      background:var(--paper); color:var(--ink);
+      border:1px solid var(--paper-edge);
+      padding:.6rem 1rem .6rem .8rem;
+      box-shadow:0 10px 20px rgba(0,0,0,.45);
+    }
+    .dossier-btn svg{ width:18px; height:18px; }
+    .dossier-btn .ribbon{
+      display:block; position:absolute; top:-8px; left:-8px;
+      background:var(--red-string); color:#f5e6c8; font-size:.55rem; letter-spacing:.06em;
+      padding:.15rem .35rem; border-radius:2px; transform:rotate(-10deg);
+      box-shadow:0 2px 4px rgba(0,0,0,.4);
+    }
+    .dossier-btn .label{ display:inline; }
+
+    .board{ padding:2rem 1.5rem 1.25rem; }
+    .module-stepper{ gap:.5rem; margin-bottom:1.5rem; }
+    .step{ font-size:.72rem; }
+    .step-connector{ width:34px; }
+    .module-intro{ padding:1.2rem 1.5rem; }
+    .module-title{ font-size:1.15rem; }
+
+    .workspace{ max-width:680px; }
+    .decision-option{ font-size:.88rem; }
+
+    .dossier-panel{
+      left:auto; top:0; bottom:0; right:0;
+      width:min(440px, 92vw); max-height:none; height:100%;
+      border-radius:0; border-top:none; border-left:1px solid var(--paper-edge);
+      box-shadow:-12px 0 34px rgba(0,0,0,.55);
+      transform:translateX(100%);
+      padding:1.6rem 1.5rem 3rem;
+    }
+    .dossier-panel.open{ transform:translateX(0); }
+    .sheet-handle{ display:none; }
+    .dossier-panel-header h2{ font-size:1.25rem; }
+    .dossier-close{ top:-.3rem; right:0; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="grain-overlay" aria-hidden="true"></div>
+
+  <button id="dossierToggle" class="dossier-btn" aria-haspopup="dialog" aria-controls="dossierPanel"
+          aria-expanded="false" aria-label="Consultar Expediente">
+    <span class="ribbon" aria-hidden="true">ACCESO</span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <path d="M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7z"/>
+    </svg>
+    <span class="label">Consultar Expediente</span>
+  </button>
+
+  <div class="desk">
+
+    <!-- ============================ ENCABEZADO ============================ -->
+    <header class="archive-header">
+      <div class="tape tape-left" aria-hidden="true"></div>
+      <div class="tape tape-right" aria-hidden="true"></div>
+      <p class="eyebrow" id="metaEyebrow"></p>
+      <h1 id="metaTitle"></h1>
+      <p class="role-briefing" id="metaBriefing"></p>
+      <p class="instructions" id="metaInstructions"></p>
+    </header>
+
+    <!-- ============================== TABLERO ============================== -->
+    <main class="board" id="board">
+
+      <!-- Progreso de la Fase: qué módulo está activo/hecho/pendiente -->
+      <nav class="module-stepper" id="moduleStepper" aria-label="Progreso de la Fase"></nav>
+
+      <!-- Ficha de presentación del módulo activo -->
+      <div class="module-intro" id="moduleIntro"></div>
+
+      <!-- Panel de Decisiones Sistémicas: un escenario + sus opciones -->
+      <section class="workspace" id="workspace">
+        <div id="scenarioContainer"></div>
+      </section>
+    </main>
+
+    <footer class="board-footer">
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <p id="progressText" aria-live="polite">Escenarios resueltos: 0/0</p>
+      <p class="folio" id="metaFolio"></p>
+    </footer>
+  </div>
+
+  <!-- ===================== NOTA DE ARCHIVO (fail-smart) ===================== -->
+  <div class="note-backdrop" id="noteBackdrop">
+    <div class="archive-note" role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+      <span class="note-pin" aria-hidden="true"></span>
+      <h3 id="noteTitle">Nota de Archivo</h3>
+      <p id="noteText"></p>
+      <button id="noteClose" class="btn-ink">Entendido, reviso de nuevo</button>
+    </div>
+  </div>
+
+  <!-- ===================== CIERRE DE LA FASE (final) ===================== -->
+  <div class="completion-banner" id="completionBanner">
+    <div class="completion-inner">
+      <h2>Fase Reconstruida</h2>
+      <p id="completionText"></p>
+      <button id="resetBtn" class="btn-ink">Reiniciar Investigación</button>
+    </div>
+  </div>
+
+  <!-- ========================= DOSSIER TEÓRICO ========================= -->
+  <div class="dossier-backdrop" id="dossierBackdrop"></div>
+  <aside class="dossier-panel" id="dossierPanel" role="dialog" aria-modal="true" aria-labelledby="dossierPanelTitle">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="dossier-panel-header">
+      <p class="eyebrow">LECTURA DE CONTEXTO</p>
+      <h2 id="dossierPanelTitle">Dossier Teórico</h2>
+      <button id="dossierClose" class="dossier-close" aria-label="Cerrar Dossier Teórico">×</button>
+    </div>
+    <div id="dossierList"></div>
+  </aside>
+
+<script>
+/* ============================================================================
+   CONTENT — Única fuente de verdad del contenido de la Fase III, dividida
+   en micro-módulos secuenciales. Cada nodo ahora es un ESCENARIO (Experimento
+   Mental) con 3 opciones de decisión y una sola opción correcta. Agregar un
+   futuro "Módulo 3.3" (o una Fase IV) es solo añadir datos aquí.
+   ============================================================================ */
+const CONTENT = {
+
+  meta: {
+    eyebrow: 'CONFIDENCIAL · FASE III · 1990–2005',
+    title: 'Archivo Central: Impacto Humano y Territorio',
+    period: '1990–2005',
+    briefing: `Usted actúa como <strong>Investigador Histórico</strong>. En esta fase, no conectará
+      causas y consecuencias, sino que analizará <strong>Experimentos Mentales</strong>. Evalúe
+      escenarios históricos de alta tensión y determine la única vía de supervivencia o
+      resistencia comunitaria posible frente a la degradación del conflicto.`,
+    instructions: 'Lea el escenario y toque la opción que considere el desenlace más realista. Si se equivoca, revise la Nota de Archivo y vuelva a intentarlo.',
+    folio: 'F. 1990–2005 · Archivo Nacional de la Memoria'
+  },
+
+  modules: [
+    {
+      id: 'm1',
+      moduleLabel: 'Módulo 3.1',
+      title: 'El Desarraigo y el Territorio',
+      range: '',
+      focus: 'Comprender que el desplazamiento no fue un efecto colateral, sino un mecanismo de supervivencia frente al vaciamiento territorial.',
+      dossierDoc: {
+        title: 'Documento 01: La lógica del desplazamiento',
+        body: 'Durante los años 90 y principios de los 2000, la confrontación alcanzó su punto máximo de degradación. El objetivo de los actores armados (especialmente paramilitares y guerrillas) ya no era solo el control político, sino el vaciamiento de territorios estratégicos para la guerra y las economías ilícitas. Ante la ausencia total de garantías estatales, la población civil quedó acorralada en el fuego cruzado.'
+      },
+      nodes: [
+        {
+          id: 'm3n1',
+          title: 'CASO I: El cerco a la vereda',
+          scenario: 'Una comunidad campesina se encuentra en una zona de valor estratégico. Un grupo armado ilegal llega imponiendo toques de queda, reclutamiento forzado y amenazas de masacre. La presencia del Estado en la región es nula. ¿Cuál es el desenlace sociológico inevitable para garantizar la vida?',
+          options: [
+            { text: 'Organizar una resistencia armada comunitaria para repeler al grupo.', isCorrect: false },
+            { text: 'Llamar a las autoridades locales para exigir presencia militar inmediata.', isCorrect: false },
+            { text: 'El éxodo masivo y el abandono total de las tierras y pertenencias.', isCorrect: true }
+          ],
+          hint: 'Hipótesis denegada: En las zonas de consolidación armada de los 90, la fuerza pública era inexistente o cómplice, y armarse solo garantizaba el exterminio. El desplazamiento forzado (éxodo) era el único mecanismo de supervivencia biológica.'
+        }
+      ]
+    },
+    {
+      id: 'm2',
+      moduleLabel: 'Módulo 3.2',
+      title: 'La Resiliencia y el Tejido Social',
+      range: '',
+      focus: 'La resistencia civil, las Comunidades de Paz y la defensa del territorio sin el uso de la violencia.',
+      dossierDoc: {
+        title: 'Documento 02: La resistencia civil no armada',
+        body: 'Frente al terror, surgieron inmensas muestras de resiliencia. Procesos como las Comunidades de Paz (ej. San José de Apartadó) o la Guardia Indígena demostraron que era posible defender la vida y el territorio mediante la organización comunitaria, la desobediencia civil y el principio de "neutralidad activa", rechazando la colaboración con cualquier actor armado, legal o ilegal.'
+      },
+      nodes: [
+        {
+          id: 'm3n2',
+          title: 'CASO II: El retorno y la neutralidad',
+          scenario: 'Una comunidad desplazada decide retornar a sus tierras. Sin embargo, el territorio sigue siendo disputado por la guerrilla y el ejército nacional. ¿Qué principio de organización social deben adoptar para no ser aniquilados en el fuego cruzado?',
+          options: [
+            { text: 'Aliarse en secreto con el ejército nacional para obtener inteligencia y protección.', isCorrect: false },
+            { text: 'Pagar cuotas económicas a la guerrilla para asegurar salvoconductos en la región.', isCorrect: false },
+            { text: 'Declarar neutralidad activa y prohibir el ingreso de armas y combatientes de cualquier bando.', isCorrect: true }
+          ],
+          hint: 'Vulneración de neutralidad: Al aliarse con cualquier actor armado (legal o ilegal) o acceder a sus demandas, la comunidad se convierte inmediatamente en objetivo militar del bando contrario. La resistencia civil exige autonomía y deslindamiento absoluto.'
+        }
+      ]
+    }
+  ]
+};
+
+/* ============================================================================
+   ESTADO GLOBAL
+   ============================================================================ */
+let currentModuleIndex   = 0;
+let currentScenarioIndex = 0;
+let matchedCount          = 0;
+let scenarioResolved      = false; // evita clics adicionales mientras se transiciona
+
+/* Referencias DOM */
+const board                = document.getElementById('board');
+const moduleStepperEl       = document.getElementById('moduleStepper');
+const moduleIntroEl         = document.getElementById('moduleIntro');
+const scenarioContainer     = document.getElementById('scenarioContainer');
+const progressFill          = document.getElementById('progressFill');
+const progressText          = document.getElementById('progressText');
+const noteBackdrop          = document.getElementById('noteBackdrop');
+const noteText              = document.getElementById('noteText');
+const noteClose             = document.getElementById('noteClose');
+const completionBanner      = document.getElementById('completionBanner');
+const completionText        = document.getElementById('completionText');
+const resetBtn              = document.getElementById('resetBtn');
+const dossierToggle         = document.getElementById('dossierToggle');
+const dossierPanel          = document.getElementById('dossierPanel');
+const dossierBackdrop       = document.getElementById('dossierBackdrop');
+const dossierClose          = document.getElementById('dossierClose');
+const dossierList           = document.getElementById('dossierList');
+
+/* ============================================================================
+   UTILIDADES
+   ============================================================================ */
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function currentModule(){ return CONTENT.modules[currentModuleIndex]; }
+function currentNode(){ return currentModule().nodes[currentScenarioIndex]; }
+function totalMatchesForModule(){ return currentModule().nodes.length; }
+
+/* ============================================================================
+   RENDER: METADATOS DE CABECERA (fijos para toda la Fase)
+   ============================================================================ */
+function renderMeta(){
+  document.getElementById('metaEyebrow').textContent = CONTENT.meta.eyebrow;
+  document.getElementById('metaTitle').textContent = CONTENT.meta.title;
+  document.getElementById('metaBriefing').innerHTML = CONTENT.meta.briefing;
+  document.getElementById('metaInstructions').textContent = CONTENT.meta.instructions;
+  document.getElementById('metaFolio').textContent = CONTENT.meta.folio;
+  document.title = CONTENT.meta.title;
+}
+
+/* ============================================================================
+   RENDER: INDICADOR DE MÓDULOS (stepper)
+   ============================================================================ */
+function renderModuleStepper(){
+  moduleStepperEl.innerHTML = CONTENT.modules.map((m, i) => {
+    let state = 'upcoming';
+    if(i < currentModuleIndex) state = 'done';
+    else if(i === currentModuleIndex) state = 'active';
+    const dot = state === 'done' ? '✔' : (i + 1);
+    const connector = i < CONTENT.modules.length - 1
+      ? `<span class="step-connector ${i < currentModuleIndex ? 'done' : ''}" aria-hidden="true"></span>`
+      : '';
+    return `
+      <span class="step step-${state}">
+        <span class="step-dot">${dot}</span>
+        <span class="step-label">${m.moduleLabel}</span>
+      </span>${connector}`;
+  }).join('');
+}
+
+/* ============================================================================
+   RENDER: INTRODUCCIÓN DEL MÓDULO ACTIVO
+   ============================================================================ */
+function renderModuleIntro(){
+  const m = currentModule();
+  moduleIntroEl.innerHTML = `
+    <p class="module-kicker">${m.moduleLabel}${m.range ? ' · ' + m.range : ''}</p>
+    <h2 class="module-title">${m.title}</h2>
+    <p class="module-focus">${m.focus}</p>
+  `;
+}
+
+/* ============================================================================
+   RENDER: DOSSIER TEÓRICO (con desbloqueo progresivo)
+   ============================================================================ */
+function renderDossier(){
+  dossierList.innerHTML = CONTENT.modules.map((m, i) => {
+    const unlocked = i <= currentModuleIndex;
+    const isCurrent = i === currentModuleIndex;
+    const stampLabel = !unlocked ? 'BLOQUEADO' : (isCurrent ? 'CLASIFICADO' : 'DESCLASIFICADO');
+    const bodyHtml = unlocked
+      ? `<p>${m.dossierDoc.body}</p>`
+      : `<p class="doc-locked-msg">🔒 Se desclasificará al completar ${CONTENT.modules[i - 1].moduleLabel}.</p>`;
+
+    return `
+      <article class="dossier-doc ${unlocked ? '' : 'locked'}">
+        <span class="doc-stamp ${unlocked ? '' : 'locked'}">${stampLabel}</span>
+        <h3>${m.dossierDoc.title}</h3>
+        ${bodyHtml}
+      </article>`;
+  }).join('');
+}
+
+function openDossier(){
+  dossierPanel.classList.add('open');
+  dossierBackdrop.classList.add('open');
+  dossierToggle.setAttribute('aria-expanded', 'true');
+  dossierClose.focus();
+  document.body.style.overflow = 'hidden';
+}
+function closeDossier(){
+  dossierPanel.classList.remove('open');
+  dossierBackdrop.classList.remove('open');
+  dossierToggle.setAttribute('aria-expanded', 'false');
+  document.body.style.overflow = '';
+  dossierToggle.focus();
+}
+dossierToggle.addEventListener('click', openDossier);
+dossierClose.addEventListener('click', closeDossier);
+dossierBackdrop.addEventListener('click', closeDossier);
+
+/* ============================================================================
+   RENDER: ESCENARIO ACTIVO (Panel de Decisiones Sistémicas)
+   ============================================================================ */
+function renderScenario(){
+  scenarioResolved = false;
+  const node = currentNode();
+
+  // Las opciones se barajan y se rotulan A/B/C según su posición final
+  const shuffled = shuffle(node.options);
+
+  scenarioContainer.innerHTML = `
+    <article class="scenario-card" data-node-id="${node.id}">
+      <div class="case-tab">${node.title}</div>
+      <span class="case-pin" aria-hidden="true"></span>
+      <h3 class="scenario-label">Experimento Mental</h3>
+      <p class="scenario-text">${node.scenario}</p>
+    </article>
+    <div class="decision-options" id="decisionOptions"></div>
+  `;
+
+  const optionsEl = document.getElementById('decisionOptions');
+  optionsEl.innerHTML = shuffled.map((opt, i) => `
+    <button type="button" class="decision-option" data-correct="${opt.isCorrect}"
+            aria-label="Opción ${String.fromCharCode(65 + i)}">
+      <span class="option-label">${String.fromCharCode(65 + i)}</span>
+      <span class="option-text">${opt.text}</span>
+    </button>
+  `).join('');
+
+  optionsEl.querySelectorAll('.decision-option').forEach(btn => {
+    btn.addEventListener('click', () => handleDecision(btn, node));
+  });
+}
+
+/* ============================================================================
+   LÓGICA CENTRAL: EVALUAR LA DECISIÓN
+   ============================================================================ */
+function handleDecision(btn, node){
+  if(scenarioResolved) return;
+
+  const correct = btn.dataset.correct === 'true';
+  if(correct){
+    resolveScenarioCorrect(btn);
+  } else {
+    rejectDecision(btn, node);
+  }
+}
+
+function resolveScenarioCorrect(btn){
+  scenarioResolved = true;
+
+  document.querySelectorAll('.decision-option').forEach(b => { b.disabled = true; });
+  btn.classList.add('correct');
+  btn.insertAdjacentHTML('beforeend', '<span class="stamp">VERIFICADO</span>');
+
+  matchedCount++;
+  updateProgress();
+
+  setTimeout(advanceScenario, 900);
+}
+
+function rejectDecision(btn, node){
+  btn.classList.remove('shake');
+  void btn.offsetWidth; // fuerza reflow para poder repetir la animación
+  btn.classList.add('shake');
+  setTimeout(() => btn.classList.remove('shake'), 500);
+
+  showNote(node.hint);
+}
+
+/* ============================================================================
+   PROGRESO Y TRANSICIÓN ENTRE ESCENARIOS / MÓDULOS
+   ============================================================================ */
+function updateProgress(){
+  const total = totalMatchesForModule();
+  const pct = Math.round((matchedCount / total) * 100);
+  progressFill.style.width = pct + '%';
+  progressText.textContent = `${currentModule().moduleLabel} · Escenarios resueltos: ${matchedCount}/${total}`;
+}
+
+function advanceScenario(){
+  currentScenarioIndex++;
+  if(currentScenarioIndex < currentModule().nodes.length){
+    renderScenario();
+  } else {
+    onModuleComplete();
+  }
+}
+
+function onModuleComplete(){
+  renderModuleStepper(); // refleja el módulo recién cerrado como "done" antes de avanzar
+
+  const isLastModule = currentModuleIndex === CONTENT.modules.length - 1;
+
+  if(isLastModule){
+    showPhaseCompletion();
+    return;
+  }
+
+  const next = CONTENT.modules[currentModuleIndex + 1];
+  const card = document.createElement('div');
+  card.className = 'module-complete-card';
+  card.innerHTML = `
+    <span class="stamp">MÓDULO COMPLETADO</span>
+    <p>Ha resuelto los escenarios de «${currentModule().title}». Ese expediente queda cerrado.</p>
+    <button class="btn-ink" id="continueModuleBtn">Continuar → ${next.moduleLabel}</button>
+  `;
+  scenarioContainer.appendChild(card);
+  document.getElementById('continueModuleBtn').addEventListener('click', advanceModule);
+  card.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+function advanceModule(){
+  currentModuleIndex++;
+  renderModule();
+  board.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+/* ============================================================================
+   SINCRONIZACIÓN CON EL MAPA GENERAL (Hub)
+   Al completar esta Fase por completo, se marca su nodo correspondiente
+   como completado en el mismo localStorage que lee el Mapa General, para
+   que la niebla de guerra se despeje ahí automáticamente en la próxima
+   carga (o al instante, si el Hub sigue abierto en otra pestaña).
+   ============================================================================ */
+const HUB_STORAGE_KEY = 'archivoCentralMemoria.hubState';
+const HUB_NODE_ID = 'core-3'; // id de esta Fase en el grafo del Mapa General
+
+function syncCompletionToHub(){
+  try{
+    const raw = localStorage.getItem(HUB_STORAGE_KEY);
+    const stored = raw ? JSON.parse(raw) : { unlocked: [], completed: [], points: 0 };
+    const completed = new Set(Array.isArray(stored.completed) ? stored.completed : []);
+    const unlocked = new Set(Array.isArray(stored.unlocked) ? stored.unlocked : []);
+    completed.add(HUB_NODE_ID);
+    unlocked.add(HUB_NODE_ID);
+    localStorage.setItem(HUB_STORAGE_KEY, JSON.stringify({
+      unlocked: Array.from(unlocked),
+      completed: Array.from(completed),
+      points: completed.size
+    }));
+  } catch(err){
+    console.warn('No se pudo sincronizar el progreso con el Mapa General:', err);
+  }
+}
+
+function showPhaseCompletion(){
+  const titles = CONTENT.modules.map(m => m.title).join(' → ');
+  completionText.textContent =
+    `Ha resuelto todos los escenarios disponibles de esta Fase: ${titles}. ` +
+    `La reconstrucción documental del periodo ${CONTENT.meta.period} avanza.`;
+  completionBanner.classList.add('show');
+  syncCompletionToHub();
+}
+
+/* ============================================================================
+   ORQUESTADOR DE MÓDULO: dibuja el módulo activo de punta a punta
+   ============================================================================ */
+function renderModule(){
+  matchedCount = 0;
+  currentScenarioIndex = 0;
+
+  renderModuleStepper();
+  renderModuleIntro();
+  renderScenario();
+  renderDossier();
+  updateProgress();
+  openDossier(); // Fuerza la apertura del Dossier en cada carga y en cada avance de módulo
+}
+
+/* ============================================================================
+   NOTA DE ARCHIVO — modal "fail smart"
+   ============================================================================ */
+function showNote(text){
+  noteText.textContent = text;
+  noteBackdrop.classList.add('show');
+  noteClose.focus();
+}
+function hideNote(){ noteBackdrop.classList.remove('show'); }
+noteClose.addEventListener('click', hideNote);
+noteBackdrop.addEventListener('click', e => { if(e.target === noteBackdrop) hideNote(); });
+
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  if(dossierPanel.classList.contains('open')) closeDossier();
+  else if(noteBackdrop.classList.contains('show')) hideNote();
+});
+
+/* ============================================================================
+   REINICIAR INVESTIGACIÓN (vuelve al Módulo 3.1)
+   ============================================================================ */
+function resetBoard(){
+  currentModuleIndex = 0;
+  completionBanner.classList.remove('show');
+  renderModule();
+}
+resetBtn.addEventListener('click', resetBoard);
+
+/* ============================================================================
+   INICIALIZACIÓN
+   ============================================================================ */
+renderMeta();
+renderModule();
+</script>
+</body>
+</html>

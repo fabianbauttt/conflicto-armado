@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Archivo Central de Memoria — Mapa General</title>
+
+<!--
+  ============================================================================
+  ARCHIVO CENTRAL DE MEMORIA — MAPA GENERAL (Hub de Experiencia Principal) v2
+  Menú de navegación y sistema de progresión para las 5 Fases del curso.
+
+  Qué hace este archivo (independiente de los archivos de cada Fase):
+    1. Pantalla de bienvenida cinematográfica (#welcomeScreen) que da paso al
+       Mapa General (#mainHub) al pulsar "Acceder al Archivo Central".
+    2. Un corcho expansivo, desplazable horizontalmente, con 17 nodos:
+         · 5 nodos "núcleo" (grandes expedientes) = las 5 Fases del curso.
+         · 12 nodos "maestría" (fotos polaroid/notas) = misiones de
+           profundización, ramificadas desde su Fase correspondiente.
+    3. Niebla de guerra: al iniciar, solo la Fase 1 es visible y accesible.
+       Los otros 16 nodos están oscurecidos/desenfocados e inhabilitados.
+
+  NOVEDAD DE ESTA VERSIÓN — Persistencia real y navegación (ya no se simula):
+    · El progreso (`unlocked`, `completed`, `points`) se guarda y se lee de
+      localStorage bajo la clave `archivoCentralMemoria.hubState`, con los
+      Set de JS serializados como arreglos para poder pasar por JSON.
+    · Un nodo desbloqueado-pero-no-completado ya NO se completa al hacer
+      clic: en su lugar, navega a `<id-del-nodo>.html` (p. ej. "core-1.html"),
+      el archivo de esa Fase o misión.
+    · Cada archivo de Fase, al terminar todos sus módulos, escribe su propio
+      nodo como completado en esa misma clave de localStorage (ver el
+      fragmento `syncCompletionToHub` que se instala en esos archivos).
+    · Al cargar (`init`) el Hub lee ese estado guardado y ejecuta una
+      reconciliación: para cada nodo marcado como completado, despeja la
+      niebla de todos sus nodos conectados — así, si una Fase se completó
+      en otra pestaña/sesión, el mapa aparece ya actualizado, con los
+      hilos rojos correspondientes dibujados, sin más intervención.
+    · Un listener de `storage` sincroniza el mapa en tiempo real si otra
+      pestaña (p. ej. la de una Fase) actualiza el progreso mientras este
+      Hub sigue abierto.
+    · El pulso de "recién desbloqueado" ahora es una animación transitoria
+      (`.node--just-unlocked`) que solo se dispara la primera vez que un
+      nodo pasa de niebla a desbloqueado dentro de la sesión, no en cada
+      recarga de un nodo que ya estaba desbloqueado de antes.
+
+  Arquitectura BEM: los componentes de nodo/desbloqueo usan bloque-elemento-
+  -modificador (`.node`, `.node__title`, `.node--core`, `.node--mastery`,
+  `.node--fogged`, `.node--unlocked`, `.node--completed`, `.unlock-meter`,
+  `.unlock-meter__count`, etc.) para mantener el CSS predecible y escalable.
+
+  Todo el JavaScript vive dentro de una IIFE para no contaminar el ámbito
+  global. No hay arrastrar-y-soltar en esta pantalla: es solo navegación.
+  ============================================================================
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+  /* ==========================================================================
+     1. TOKENS DE DISEÑO (compartidos con el resto de la aplicación)
+     ========================================================================== */
+  :root{
+    --wood-dark:   #201207;
+    --wood-mid:    #3a2513;
+    --cork:        #c8a066;
+    --paper:       #eee0bd;
+    --paper-2:     #e4d3a8;
+    --paper-edge:  #cbb181;
+    --ink:         #2c2013;
+    --ink-soft:    #5c4a30;
+    --red-string:  #9c2a20;
+    --brass:       #c79a53;
+    --warn:        #b85b22;
+    --ok:          #3f6b3a;
+    --shadow:      rgba(20,12,4,0.55);
+    --tap-min:     44px;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0; padding:0; height:100%;
+    background: var(--wood-dark);
+    color: var(--ink);
+    font-family:'Courier Prime', 'Courier New', monospace;
+    font-size:16px;
+    touch-action:manipulation;
+    -webkit-text-size-adjust:100%;
+    overflow-x:hidden;
+  }
+
+  .sr-only{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
+
+  .grain-overlay{
+    position:fixed; inset:0; pointer-events:none; z-index:999;
+    opacity:.06; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  button{ font-family:inherit; }
+
+  /* ==========================================================================
+     2. PANTALLA DE BIENVENIDA
+     ========================================================================== */
+  .welcome{
+    position:fixed; inset:0; height:100vh; z-index:500;
+    display:flex; align-items:center; justify-content:center;
+    padding:1.5rem;
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(156,42,32,.12), transparent 55%),
+      linear-gradient(180deg, #170d05, var(--wood-dark) 60%, #120a04);
+    overflow:hidden;
+    transition: opacity .6s ease, visibility .6s ease;
+  }
+  .welcome--hidden{ opacity:0; visibility:hidden; pointer-events:none; }
+
+  /* barrido tipo escáner, decorativo */
+  .welcome__scan{
+    position:absolute; left:0; right:0; height:120px; top:-120px;
+    background:linear-gradient(180deg, transparent, rgba(255,255,255,.06), transparent);
+    animation: scan 7s linear infinite;
+    pointer-events:none;
+  }
+  @keyframes scan{ 0%{ top:-120px; } 100%{ top:100%; } }
+
+  .welcome__stamp{
+    position:absolute; top:6%; right:6%;
+    border:3px solid var(--red-string); color:var(--red-string);
+    font-family:'Special Elite', monospace; font-size:.72rem; letter-spacing:.1em;
+    padding:.4rem .7rem; border-radius:4px; transform:rotate(10deg);
+    opacity:.75;
+  }
+
+  .welcome__content{
+    position:relative; max-width:520px; width:100%; text-align:center;
+    background:var(--paper); border:1px solid var(--paper-edge);
+    border-radius:3px 12px 3px 12px / 10px 3px 12px 3px;
+    padding:2.2rem 1.6rem 2rem;
+    box-shadow:0 30px 60px rgba(0,0,0,.6);
+  }
+  .welcome__eyebrow{
+    font-family:'Special Elite', monospace; letter-spacing:.16em; font-size:.7rem;
+    color:var(--ink-soft); margin:0 0 .6rem;
+    opacity:0; animation:fadeUp .6s ease forwards .15s;
+  }
+  .welcome__title{
+    font-family:'Special Elite', monospace; font-size:clamp(1.5rem, 6vw, 2.2rem);
+    margin:0 0 1rem; color:var(--ink); line-height:1.2;
+    opacity:0; animation:fadeUp .6s ease forwards .35s;
+  }
+  .welcome__brief{
+    font-size:.92rem; line-height:1.6; color:var(--ink); margin:0 0 1.5rem;
+    opacity:0; animation:fadeUp .6s ease forwards .55s;
+  }
+  .welcome__credentials{
+    display:flex; justify-content:center; gap:.6rem; flex-wrap:wrap;
+    margin:0 0 1.6rem;
+    opacity:0; animation:fadeUp .6s ease forwards .7s;
+  }
+  .welcome__badge{
+    font-family:'Special Elite', monospace; font-size:.62rem; letter-spacing:.05em;
+    border:1px solid var(--ink-soft); color:var(--ink-soft);
+    padding:.25rem .5rem; border-radius:3px;
+  }
+  .welcome__cta{
+    opacity:0; animation:fadeUp .6s ease forwards .9s;
+  }
+  @keyframes fadeUp{
+    from{ opacity:0; transform:translateY(10px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+
+  .btn-ink{
+    display:inline-flex; align-items:center; justify-content:center;
+    min-height:var(--tap-min); padding:.7rem 1.4rem;
+    background:var(--ink); color:var(--paper);
+    font-family:'Special Elite', monospace; font-size:.85rem; letter-spacing:.03em;
+    border:none; border-radius:4px; cursor:pointer;
+    transition:transform .12s ease, background .15s ease;
+  }
+  .btn-ink:hover{ background:#463420; }
+  .btn-ink:active{ transform:scale(.97); }
+  .btn-ink:focus-visible{ outline:3px solid var(--red-string); outline-offset:2px; }
+
+  /* ==========================================================================
+     3. HUB PRINCIPAL — cabecera
+     ========================================================================== */
+  .hub{
+    display:flex; flex-direction:column; height:100vh; height:100dvh;
+    background:
+      radial-gradient(ellipse at top, rgba(255,255,255,.03), transparent 60%),
+      linear-gradient(180deg, var(--wood-mid), var(--wood-dark));
+  }
+
+  .hub__header{
+    flex:0 0 auto; text-align:center;
+    padding:1rem 1rem .9rem;
+    border-bottom:1px solid rgba(0,0,0,.35);
+    background:rgba(0,0,0,.15);
+  }
+  .hub__eyebrow{
+    font-family:'Special Elite', monospace; letter-spacing:.14em; font-size:.62rem;
+    color:#c9a066; margin:0 0 .3rem;
+  }
+  .hub__title{
+    font-family:'Special Elite', monospace; font-size:clamp(1.1rem, 4vw, 1.5rem);
+    color:#f1e3c2; margin:0 0 .4rem;
+  }
+  .hub__hint{
+    font-family:'Kalam', cursive; font-size:.82rem; color:#d8c39a; margin:0 0 .7rem;
+  }
+
+  .unlock-meter{
+    display:inline-flex; align-items:center; gap:.5rem;
+    background:var(--paper); border:1px solid var(--paper-edge);
+    border-radius:20px; padding:.35rem .8rem .35rem .5rem;
+    box-shadow:0 6px 14px rgba(0,0,0,.4);
+  }
+  .unlock-meter__icon{
+    width:26px; height:26px; border-radius:50%;
+    background:var(--red-string); color:#f5e6c8;
+    display:flex; align-items:center; justify-content:center;
+    font-size:.85rem;
+  }
+  .unlock-meter__label{
+    font-family:'Special Elite', monospace; font-size:.66rem; letter-spacing:.04em;
+    color:var(--ink-soft);
+  }
+  .unlock-meter__count{
+    font-family:'Special Elite', monospace; font-size:.9rem; color:var(--ink);
+  }
+
+  /* ==========================================================================
+     4. HUB — mapa desplazable (corcho)
+     ========================================================================== */
+  .hub__scroll{
+    flex:1 1 auto; overflow-x:auto; overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+    scroll-snap-type:x proximity;
+    background-color:var(--cork);
+    background-image:
+      repeating-linear-gradient(45deg, rgba(90,62,26,.10) 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(-45deg, rgba(90,62,26,.10) 0 2px, transparent 2px 7px),
+      radial-gradient(circle at 18% 22%, rgba(255,255,255,.10), transparent 45%);
+    box-shadow: inset 0 0 70px rgba(40,25,8,.6);
+  }
+
+  .hub__track{
+    position:relative;
+    display:flex; align-items:stretch;
+    height:100%;
+    padding:1.75rem 6vw;
+    gap:44px;
+    width:max-content;
+  }
+
+  .hub__strings{
+    position:absolute; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:5; overflow:visible;
+  }
+  .thread{
+    fill:none; stroke:var(--red-string); stroke-width:2.4;
+    stroke-linecap:round; filter:drop-shadow(0 1px 1px rgba(0,0,0,.45));
+  }
+
+  .phase-column{
+    position:relative;
+    flex:0 0 230px;
+    width:230px;
+    scroll-snap-align:center;
+  }
+
+  /* ==========================================================================
+     5. NODOS — arquitectura BEM (bloque .node, modificadores --core/--mastery/
+        --fogged/--unlocked/--completed)
+     ========================================================================== */
+  .node{
+    position:absolute;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; cursor:pointer;
+    border:none; padding:0;
+    font-family:'Courier Prime', monospace;
+    transition: filter .4s ease, opacity .4s ease, box-shadow .3s ease, transform .15s ease;
+  }
+  .node:focus-visible{ outline:3px solid #fff; outline-offset:3px; }
+  .node:active:not(:disabled){ transform:translate(-50%,-50%) scale(.97); }
+
+  /* ---- Modificador: núcleo (Fase) — carpeta grande ---- */
+  .node--core{
+    top:50%; left:50%; transform:translate(-50%,-50%);
+    width:168px; min-height:118px;
+    background:var(--paper-2); border:1px solid var(--paper-edge);
+    border-radius:4px 12px 4px 12px / 10px 4px 12px 4px;
+    padding:1.5rem .8rem .8rem;
+    box-shadow:0 16px 26px rgba(0,0,0,.45);
+  }
+  .node--core .node__tab{
+    position:absolute; top:-14px; left:50%; transform:translateX(-50%);
+    background:#3a2510; color:#e9d6a5;
+    font-family:'Special Elite', monospace; font-size:.62rem; letter-spacing:.08em;
+    padding:.28rem .6rem; white-space:nowrap;
+    clip-path:polygon(6% 0,94% 0,100% 100%,0% 100%);
+  }
+  .node--core .node__title{ font-weight:700; font-size:.88rem; line-height:1.3; color:var(--ink); }
+  .node--core .node__sub{ font-size:.68rem; color:var(--ink-soft); margin-top:.3rem; }
+
+  /* ---- Modificador: maestría (misión) — polaroid pequeña ---- */
+  .node--mastery{
+    width:92px; min-height:104px;
+    background:#faf6ea; border:1px solid #d8c9a0;
+    border-bottom-width:14px;
+    border-radius:2px;
+    padding:.5rem .4rem .3rem;
+    box-shadow:0 10px 16px rgba(0,0,0,.4);
+  }
+  .node--mastery .node__badge{
+    position:absolute; top:-9px; left:50%; transform:translateX(-50%);
+    background:var(--red-string); color:#f5e6c8;
+    font-family:'Special Elite', monospace; font-size:.56rem; letter-spacing:.05em;
+    padding:.15rem .4rem; border-radius:2px; white-space:nowrap;
+  }
+  .node--mastery .node__frame{
+    width:100%; flex:1;
+    background:repeating-linear-gradient(45deg, rgba(0,0,0,.06) 0 4px, transparent 4px 9px);
+    border:1px solid rgba(0,0,0,.15); border-radius:1px;
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom:.35rem; min-height:44px;
+  }
+  .node--mastery .node__title{
+    font-family:'Kalam', cursive; font-size:.66rem; line-height:1.25; color:#3a2a15;
+  }
+
+  /* ---- Pin decorativo en cada nodo ---- */
+  .node__pin{
+    position:absolute; top:-8px; right:-6px;
+    width:13px; height:13px; border-radius:50%;
+    background:radial-gradient(circle at 30% 30%, #e7c07a, var(--brass) 70%);
+    box-shadow:0 2px 3px rgba(0,0,0,.5); z-index:2;
+  }
+  .node--mastery .node__pin{ top:-6px; right:50%; transform:translateX(50%); }
+
+  /* ---- Estado: niebla de guerra (bloqueado) ---- */
+  .node--fogged{
+    filter: blur(3px) grayscale(.7) brightness(.4);
+    opacity:.8; cursor:default; pointer-events:none;
+  }
+  .node__lock{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#f1e3c2; filter:none; opacity:0; z-index:3;
+  }
+  .node--fogged .node__lock{ opacity:.85; }
+
+  /* ---- Estado: desbloqueado (niebla despejada, listo para completar) ---- */
+  .node--unlocked{
+    filter:none; opacity:1;
+    box-shadow:0 0 0 3px rgba(156,42,32,.35), 0 16px 26px rgba(0,0,0,.45);
+  }
+  .node--unlocked.node--mastery{ box-shadow:0 0 0 3px rgba(156,42,32,.35), 0 10px 16px rgba(0,0,0,.4); }
+
+  /* Pulso TRANSITORIO: solo se agrega por JS en el momento en que un nodo
+     pasa de niebla a desbloqueado dentro de la sesión actual (no se debe
+     repetir en cada carga de página para nodos ya desbloqueados en una
+     sesión anterior, ahora que el estado persiste en localStorage). */
+  .node--just-unlocked{ animation: unlockPulse 1.6s ease-out 3; }
+  @keyframes unlockPulse{
+    0%{ box-shadow:0 0 0 0 rgba(156,42,32,.65); }
+    70%{ box-shadow:0 0 0 16px rgba(156,42,32,0); }
+    100%{ box-shadow:0 0 0 0 rgba(156,42,32,0); }
+  }
+
+  /* ---- Estado: completado (verificado) ---- */
+  .node--completed{ cursor:default; }
+  .node--completed.node--core{ background:var(--paper); }
+  .node__stamp{
+    position:absolute; z-index:4;
+    border:2px solid var(--ok); color:var(--ok);
+    font-family:'Special Elite', monospace; letter-spacing:.05em;
+    border-radius:3px; transform:rotate(-10deg);
+    animation:stampIn .4s ease-out;
+    background:rgba(255,255,255,.7);
+  }
+  .node--core .node__stamp{ font-size:.6rem; padding:.15rem .4rem; bottom:.4rem; }
+  .node--mastery .node__stamp{ font-size:.85rem; padding:.05rem .3rem; top:30%; left:50%; transform:translate(-50%,-50%) rotate(-10deg); }
+  @keyframes stampIn{
+    0%{ transform:scale(2.4) rotate(-16deg); opacity:0; }
+    60%{ transform:scale(.9) rotate(-7deg); opacity:1; }
+    100%{ transform:scale(1) rotate(-9deg); opacity:1; }
+  }
+
+  .hub__status{ text-align:center; padding:.5rem; }
+
+  /* ==========================================================================
+     6. BANNER DE CIERRE (bono: mapa 100% desclasificado)
+     ========================================================================== */
+  .completion-banner{
+    position:fixed; inset:0; background:rgba(10,6,2,.75);
+    display:none; align-items:center; justify-content:center; z-index:600; padding:1.1rem;
+  }
+  .completion-banner.show{ display:flex; }
+  .completion-inner{
+    max-width:480px; background:var(--paper); border:1px solid var(--paper-edge);
+    border-radius:6px; padding:2rem 1.6rem; text-align:center;
+    box-shadow:0 25px 50px rgba(0,0,0,.6);
+  }
+  .completion-inner h2{ font-family:'Special Elite', monospace; color:var(--red-string); margin:0 0 .8rem; font-size:1.25rem; }
+  .completion-inner p{ line-height:1.55; margin:0 0 1.3rem; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+  }
+
+  @media (hover:hover) and (pointer:fine){
+    .node--unlocked:hover{ transform:translate(-50%,-50%) translateY(-3px); }
+    .node--mastery.node--unlocked:hover{ transform:translateY(-3px); }
+  }
+
+  /* ==========================================================================
+     7. ESCRITORIO
+     ========================================================================== */
+  @media (min-width:769px){
+    .hub__header{ padding:1.3rem 1rem 1.1rem; }
+    .hub__title{ font-size:1.7rem; }
+    .hub__hint{ font-size:.9rem; }
+
+    .hub__track{ padding:2.5rem 8vw; gap:70px; }
+    .phase-column{ flex-basis:290px; width:290px; }
+
+    .node--core{ width:200px; min-height:140px; padding:1.7rem 1rem 1rem; }
+    .node--core .node__title{ font-size:.98rem; }
+    .node--mastery{ width:110px; min-height:120px; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="grain-overlay" aria-hidden="true"></div>
+
+  <!-- ============================ BIENVENIDA ============================ -->
+  <section id="welcomeScreen" class="welcome">
+    <div class="welcome__scan" aria-hidden="true"></div>
+    <span class="welcome__stamp" aria-hidden="true">CLASIFICADO</span>
+    <div class="welcome__content">
+      <p class="welcome__eyebrow">AGENCIA DE INVESTIGACIÓN HISTÓRICA</p>
+      <h1 class="welcome__title">Archivo Central de Memoria</h1>
+      <p class="welcome__brief">
+        Su acceso ha sido aprobado. Miles de expedientes sobre el conflicto armado colombiano
+        permanecen clasificados, esperando ser reconstruidos. Cada expediente que complete
+        desclasificará nuevas líneas de investigación en el mapa general.
+      </p>
+      <div class="welcome__credentials" aria-hidden="true">
+        <span class="welcome__badge">NIVEL: INVESTIGADOR</span>
+        <span class="welcome__badge">EXPEDIENTES: 17</span>
+        <span class="welcome__badge">FOLIO 001–017</span>
+      </div>
+      <button id="enterHubBtn" class="btn-ink welcome__cta">Acceder al Archivo Central</button>
+    </div>
+  </section>
+
+  <!-- ============================== HUB PRINCIPAL ============================== -->
+  <div id="mainHub" class="hub">
+    <header class="hub__header">
+      <p class="hub__eyebrow">MAPA GENERAL DE INVESTIGACIÓN</p>
+      <h1 class="hub__title">Archivo Central de Memoria</h1>
+      <p class="hub__hint">Desplácese horizontalmente. Complete cada expediente para desclasificar el resto del mapa.</p>
+      <div class="unlock-meter">
+        <span class="unlock-meter__icon" aria-hidden="true">🔓</span>
+        <span class="unlock-meter__label">PUNTOS DE DESBLOQUEO</span>
+        <span class="unlock-meter__count" id="unlockCount">0</span>
+      </div>
+    </header>
+
+    <div class="hub__scroll" id="hubScroll">
+      <div class="hub__track" id="hubTrack">
+        <svg class="hub__strings" id="hubStrings" aria-hidden="true"></svg>
+        <!-- Las columnas de Fase (núcleo + misiones) se generan por JS -->
+      </div>
+    </div>
+
+    <p class="sr-only" id="hubStatus" aria-live="polite"></p>
+  </div>
+
+  <!-- ===================== CIERRE (mapa 100% desclasificado) ===================== -->
+  <div class="completion-banner" id="completionBanner">
+    <div class="completion-inner">
+      <h2>Archivo Completo</h2>
+      <p>Ha desclasificado los 17 expedientes del Archivo Central de Memoria. La investigación queda cerrada.</p>
+      <button id="closeCompletionBtn" class="btn-ink">Cerrar</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ==========================================================================
+     DATOS — 5 nodos núcleo (Fases) + 12 nodos de maestría (misiones), 17 en
+     total. `parent` define de qué Fase depende cada misión; ese mismo campo
+     se usa para construir el grafo de desbloqueo automáticamente.
+     ========================================================================== */
+  const NODES = [
+    { id:'core-1', kind:'core', title:'Fase 1: Raíces', sub:'1948–1964' },
+    { id:'m1a', kind:'mastery', parent:'core-1', title:'Voces de la Violencia Bipartidista' },
+    { id:'m1b', kind:'mastery', parent:'core-1', title:'Mapa del Despojo Agrario' },
+    { id:'m1c', kind:'mastery', parent:'core-1', title:'Archivo Fotográfico: 1948' },
+
+    { id:'core-2', kind:'core', title:'Fase 2: Actores', sub:'1964–1990' },
+    { id:'m2a', kind:'mastery', parent:'core-2', title:'Doctrina de Seguridad Nacional' },
+    { id:'m2b', kind:'mastery', parent:'core-2', title:'Rutas del Narcotráfico' },
+    { id:'m2c', kind:'mastery', parent:'core-2', title:'Origen del Paramilitarismo' },
+
+    { id:'core-3', kind:'core', title:'Fase 3: Impacto', sub:'1990–2005' },
+    { id:'m3a', kind:'mastery', parent:'core-3', title:'Testimonios del Desarraigo' },
+    { id:'m3b', kind:'mastery', parent:'core-3', title:'Comunidades de Paz' },
+
+    { id:'core-4', kind:'core', title:'Fase 4: Paz', sub:'2016–Actualidad' },
+    { id:'m4a', kind:'mastery', parent:'core-4', title:'La JEP en Terreno' },
+    { id:'m4b', kind:'mastery', parent:'core-4', title:'Informe de la Comisión de la Verdad' },
+
+    { id:'core-5', kind:'core', title:'Fase 5: Conclusión', sub:'Síntesis Final' },
+    { id:'m5a', kind:'mastery', parent:'core-5', title:'Línea de Tiempo Maestra' },
+    { id:'m5b', kind:'mastery', parent:'core-5', title:'Informe Final del Investigador' }
+  ];
+
+  const FIRST_NODE_ID = 'core-1';
+
+  // Desplazamientos preestablecidos para dispersar las misiones alrededor
+  // de su núcleo, como fotos clavadas al corcho.
+  const MASTERY_OFFSETS = [
+    { top:'6%',  left:'0%',  rot:-9 },
+    { top:'4%',  left:'58%', rot:7 },
+    { top:'76%', left:'26%', rot:-5 },
+    { top:'72%', left:'62%', rot:10 }
+  ];
+
+  /* ==========================================================================
+     GRAFO DE DESBLOQUEO — se construye una sola vez a partir de NODES
+     ========================================================================== */
+  const CORE_SEQUENCE = NODES.filter(n => n.kind === 'core').map(n => n.id);
+  const EDGES = [];
+  for(let i = 0; i < CORE_SEQUENCE.length - 1; i++){
+    EDGES.push([CORE_SEQUENCE[i], CORE_SEQUENCE[i + 1]]);
+  }
+  NODES.forEach(n => { if(n.parent) EDGES.push([n.parent, n.id]); });
+
+  function revealTargets(nodeId){
+    const targets = [];
+    EDGES.forEach(([a, b]) => {
+      if(a === nodeId) targets.push(b);
+      else if(b === nodeId) targets.push(a);
+    });
+    return targets;
+  }
+
+  function nodeById(id){ return NODES.find(n => n.id === id); }
+
+  /* ==========================================================================
+     PERSISTENCIA — localStorage compartido con los archivos de cada Fase.
+     Los Set de JS no son serializables directamente: se guardan como
+     arreglos y se reconstruyen como Set al leer.
+     ========================================================================== */
+  const STORAGE_KEY = 'archivoCentralMemoria.hubState';
+
+  function loadStoredState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      const parsed = JSON.parse(raw);
+      return {
+        unlocked: new Set(Array.isArray(parsed.unlocked) ? parsed.unlocked : []),
+        completed: new Set(Array.isArray(parsed.completed) ? parsed.completed : [])
+      };
+    } catch(err){
+      console.warn('No se pudo leer el progreso guardado:', err);
+      return null;
+    }
+  }
+
+  function persistState(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        unlocked: Array.from(state.unlocked),
+        completed: Array.from(state.completed),
+        points: state.points
+      }));
+    } catch(err){
+      console.warn('No se pudo guardar el progreso:', err);
+    }
+  }
+
+  /* ==========================================================================
+     ESTADO — Puntos de Desbloqueo nunca se restan, solo se acumulan.
+     Se inicializa desde localStorage si existe; si no, arranca solo con la
+     Fase 1 visible, igual que la primera vez que alguien abre el Archivo.
+     ========================================================================== */
+  const stored = loadStoredState();
+  const state = {
+    unlocked: stored ? stored.unlocked : new Set([FIRST_NODE_ID]),
+    completed: stored ? stored.completed : new Set(),
+    points: 0 // se recalcula siempre a partir de `completed` — ver reconcileState()
+  };
+
+  /* Ante datos corruptos, vacíos o de una versión anterior del mapa, esta
+     reconciliación es lo que realmente "despeja la niebla": para cada nodo
+     ya completado (aquí mismo o en el archivo de otra Fase), se asegura de
+     que todos sus nodos conectados estén también desbloqueados. Se repite
+     hasta que no haya más cambios, para resolver cadenas completas. */
+  function reconcileState(){
+    state.unlocked.add(FIRST_NODE_ID); // siempre accesible
+    let changed = true;
+    while(changed){
+      changed = false;
+      state.completed.forEach(id => {
+        state.unlocked.add(id);
+        revealTargets(id).forEach(targetId => {
+          if(!state.unlocked.has(targetId)){
+            state.unlocked.add(targetId);
+            changed = true;
+          }
+        });
+      });
+    }
+    state.points = state.completed.size; // los puntos nunca se restan: solo se derivan del avance
+  }
+
+  /* Referencias DOM */
+  const welcomeScreen     = document.getElementById('welcomeScreen');
+  const enterHubBtn       = document.getElementById('enterHubBtn');
+  const hubTrack          = document.getElementById('hubTrack');
+  const hubStrings        = document.getElementById('hubStrings');
+  const unlockCountEl     = document.getElementById('unlockCount');
+  const hubStatus         = document.getElementById('hubStatus');
+  const completionBanner  = document.getElementById('completionBanner');
+  const closeCompletionBtn = document.getElementById('closeCompletionBtn');
+
+  const nodeElements = {}; // id -> <button>
+  const connections = [];  // {a, b, path} para redibujar los hilos
+
+  /* ==========================================================================
+     RENDER: columnas de Fase + nodos
+     ========================================================================== */
+  function buildHub(){
+    CORE_SEQUENCE.forEach(coreId => {
+      const core = nodeById(coreId);
+      const column = document.createElement('div');
+      column.className = 'phase-column';
+      column.appendChild(buildNodeEl(core));
+
+      const children = NODES.filter(n => n.parent === coreId);
+      children.forEach((child, i) => {
+        const offset = MASTERY_OFFSETS[i % MASTERY_OFFSETS.length];
+        const el = buildNodeEl(child);
+        el.style.top = offset.top;
+        el.style.left = offset.left;
+        el.style.transform = `rotate(${offset.rot}deg)`;
+        column.appendChild(el);
+      });
+
+      hubTrack.appendChild(column);
+    });
+
+    // Los hilos se dibujan sobre el track pero deben quedar por encima de
+    // la niebla y por debajo de los nodos activos; se reinserta al final
+    // de cada columna renderizada para mantener el orden correcto en el DOM.
+    hubTrack.appendChild(hubStrings);
+
+    NODES.forEach(n => applyNodeState(n.id));
+    redrawStrings();
+  }
+
+  function buildNodeEl(node){
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'node-' + node.id;
+    btn.dataset.id = node.id;
+    btn.className = 'node node--' + node.kind;
+
+    const pin = document.createElement('span');
+    pin.className = 'node__pin';
+    pin.setAttribute('aria-hidden', 'true');
+    btn.appendChild(pin);
+
+    if(node.kind === 'core'){
+      const tab = document.createElement('span');
+      tab.className = 'node__tab';
+      tab.textContent = node.title.split(':')[0];
+      btn.appendChild(tab);
+
+      const title = document.createElement('span');
+      title.className = 'node__title';
+      title.textContent = node.title;
+      btn.appendChild(title);
+
+      const sub = document.createElement('span');
+      sub.className = 'node__sub';
+      sub.textContent = node.sub || '';
+      btn.appendChild(sub);
+    } else {
+      const badge = document.createElement('span');
+      badge.className = 'node__badge';
+      badge.textContent = 'MISIÓN';
+      btn.appendChild(badge);
+
+      const frame = document.createElement('span');
+      frame.className = 'node__frame';
+      btn.appendChild(frame);
+
+      const title = document.createElement('span');
+      title.className = 'node__title';
+      title.textContent = node.title;
+      btn.appendChild(title);
+    }
+
+    const lock = document.createElement('span');
+    lock.className = 'node__lock';
+    lock.setAttribute('aria-hidden', 'true');
+    lock.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+    btn.appendChild(lock);
+
+    btn.addEventListener('click', () => navigateToNode(node));
+
+    nodeElements[node.id] = btn;
+    return btn;
+  }
+
+  /* ==========================================================================
+     ESTADO VISUAL DE UN NODO (BEM: agrega/quita modificadores)
+     ========================================================================== */
+  function applyNodeState(id){
+    const el = nodeElements[id];
+    if(!el) return;
+    const node = nodeById(id);
+    const isUnlocked = state.unlocked.has(id);
+    const isCompleted = state.completed.has(id);
+
+    el.classList.toggle('node--fogged', !isUnlocked);
+    el.classList.toggle('node--unlocked', isUnlocked && !isCompleted);
+    el.classList.toggle('node--completed', isCompleted);
+    el.disabled = !isUnlocked || isCompleted;
+
+    const kindLabel = node.kind === 'core' ? node.title : 'Misión: ' + node.title;
+    if(!isUnlocked){
+      el.setAttribute('aria-label', kindLabel + ' (bloqueado)');
+    } else if(isCompleted){
+      el.setAttribute('aria-label', kindLabel + ' (verificado)');
+    } else {
+      el.setAttribute('aria-label', kindLabel + ' (disponible — toque para abrir el expediente)');
+    }
+
+    // Sello "VERIFICADO" — se agrega una sola vez
+    if(isCompleted && !el.querySelector('.node__stamp')){
+      const stamp = document.createElement('span');
+      stamp.className = 'node__stamp';
+      stamp.textContent = node.kind === 'core' ? 'VERIFICADO' : '✔';
+      el.appendChild(stamp);
+    }
+  }
+
+  // Reproduce el pulso de "recién desbloqueado" una sola vez, y solo para
+  // nodos que de verdad acaban de pasar de niebla a desbloqueado en ESTA
+  // sesión — no en cada recarga de un progreso que ya estaba guardado.
+  function markJustUnlocked(id){
+    const el = nodeElements[id];
+    if(!el) return;
+    el.classList.add('node--just-unlocked');
+    setTimeout(() => el.classList.remove('node--just-unlocked'), 4900);
+  }
+
+  /* ==========================================================================
+     NAVEGACIÓN — un nodo desbloqueado-pero-no-completado actúa como enlace a
+     su propio archivo HTML. Ya NO se completa con un clic dentro del Hub: es
+     el archivo de esa Fase/misión quien reporta su finalización de vuelta
+     (ver `syncCompletionToHub` instalado en los archivos de cada Fase).
+     ========================================================================== */
+  function navigateToNode(node){
+    if(!state.unlocked.has(node.id)) return; // en niebla — defensivo, ya es inalcanzable por CSS/disabled
+    if(state.completed.has(node.id)) return;  // ya verificado — nada que abrir de nuevo aquí
+    window.location.href = node.href || (node.id + '.html');
+  }
+
+  function updateUnlockMeter(){
+    unlockCountEl.textContent = state.points;
+  }
+
+  function checkFullCompletion(){
+    if(state.completed.size === NODES.length){
+      completionBanner.classList.add('show');
+    }
+  }
+
+  /* ==========================================================================
+     HILOS ROJOS — solo entre nodos ya desbloqueados (niebla despejada)
+     ========================================================================== */
+  function redrawStrings(){
+    // Limpia y vuelve a construir: es más simple y barato que reconciliar,
+    // dado que el número de hilos activos es pequeño (máximo 16).
+    connections.length = 0;
+    hubStrings.innerHTML = '';
+
+    EDGES.forEach(([a, b]) => {
+      if(state.unlocked.has(a) && state.unlocked.has(b)){
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('class', 'thread');
+        hubStrings.appendChild(path);
+        connections.push({ a, b, path });
+      }
+    });
+
+    positionAllStrings();
+  }
+
+  function positionAllStrings(){
+    const trackRect = hubTrack.getBoundingClientRect();
+    connections.forEach(conn => {
+      const elA = nodeElements[conn.a];
+      const elB = nodeElements[conn.b];
+      if(!elA || !elB) return;
+      const rA = elA.getBoundingClientRect();
+      const rB = elB.getBoundingClientRect();
+
+      const x1 = rA.left + rA.width / 2 - trackRect.left;
+      const y1 = rA.top + rA.height / 2 - trackRect.top;
+      const x2 = rB.left + rB.width / 2 - trackRect.left;
+      const y2 = rB.top + rB.height / 2 - trackRect.top;
+
+      const midX = (x1 + x2) / 2;
+      const sag = 30;
+      const midY = (y1 + y2) / 2 + sag;
+
+      conn.path.setAttribute('d', `M ${x1} ${y1} Q ${midX} ${midY} ${x2} ${y2}`);
+    });
+  }
+
+  // El track no cambia de tamaño con el scroll (los hilos son hijos suyos y
+  // se desplazan junto con los nodos), así que solo hace falta recalcular
+  // ante cambios reales de layout.
+  window.addEventListener('resize', positionAllStrings);
+  window.addEventListener('orientationchange', positionAllStrings);
+
+  /* ==========================================================================
+     SINCRONIZACIÓN EN VIVO — si el archivo de una Fase actualiza el mismo
+     localStorage (por ejemplo, en otra pestaña) mientras este Hub sigue
+     abierto, el evento `storage` lo notifica y el mapa se actualiza al
+     instante, sin necesidad de recargar la página.
+     ========================================================================== */
+  function refreshFromStorage(){
+    const fresh = loadStoredState();
+    if(!fresh) return;
+
+    const previouslyUnlocked = new Set(state.unlocked);
+
+    state.unlocked = fresh.unlocked;
+    state.completed = fresh.completed;
+    reconcileState();
+    persistState();
+
+    NODES.forEach(n => applyNodeState(n.id));
+    state.unlocked.forEach(id => {
+      if(!previouslyUnlocked.has(id)) markJustUnlocked(id);
+    });
+
+    updateUnlockMeter();
+    redrawStrings();
+    checkFullCompletion();
+
+    const newlyUnlocked = Array.from(state.unlocked).filter(id => !previouslyUnlocked.has(id));
+    if(newlyUnlocked.length){
+      const names = newlyUnlocked.map(id => nodeById(id).title).join(', ');
+      hubStatus.textContent = `Progreso actualizado. Nuevo(s) expediente(s) disponible(s): ${names}. Puntos de desbloqueo: ${state.points}.`;
+    }
+  }
+
+  window.addEventListener('storage', e => {
+    if(e.key === STORAGE_KEY) refreshFromStorage();
+  });
+
+  /* ==========================================================================
+     PANTALLA DE BIENVENIDA → HUB
+     ========================================================================== */
+  enterHubBtn.addEventListener('click', () => {
+    welcomeScreen.classList.add('welcome--hidden');
+    setTimeout(() => { welcomeScreen.hidden = true; }, 650);
+    // Recalcula los hilos una vez el layout del hub es visible/medible.
+    requestAnimationFrame(positionAllStrings);
+  });
+
+  closeCompletionBtn.addEventListener('click', () => {
+    completionBanner.classList.remove('show');
+  });
+
+  /* ==========================================================================
+     INICIALIZACIÓN — lee/reconcilia localStorage ANTES de construir el DOM,
+     así el primer render ya refleja cualquier progreso guardado (Fases
+     completadas en sesiones o pestañas anteriores).
+     ========================================================================== */
+  reconcileState();
+  persistState();
+  buildHub();
+  updateUnlockMeter();
+  checkFullCompletion();
+
+})();
+</script>
+</body>
+</html>

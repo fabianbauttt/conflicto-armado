@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Archivo Central: La Sala de Cofradías</title>
+
+<!--
+  ============================================================================
+  ARCHIVO CENTRAL DE MEMORIA — FASE V: LA SALA DE COFRADÍAS
+  Cierre del curso. A diferencia de las Fases I–IV, aquí no hay arrastrar-y-
+  soltar ni panel de decisiones: es un protocolo de aula (roles, publicación,
+  auditoría cruzada y sustentación) que culmina en una "Terminal de
+  Seguridad" donde el estudiante ingresa la Clave de Desclasificación que le
+  entregó el Game Master (el docente) tras la sustentación presencial.
+
+  Arquitectura:
+    · Misma paleta de tokens, tipografías (Courier Prime / Special Elite /
+      Kalam) y estética de corcho/papel de las Fases anteriores.
+    · Reutiliza el mismo patrón "Nota de Archivo" (showNote/hideNote) para
+      la retroalimentación fail-smart de una clave incorrecta.
+    · Reutiliza el mismo `completion-banner` como pantalla de Victoria
+      Épica, con la MISMA lógica de sincronización con el Mapa General
+      (localStorage) usada en core-1.html…core-4.html.
+    · No hay Dossier Teórico ni stepper de módulos en esta Fase: no aplica,
+      ya que el contenido a evaluar no vive en esta página sino en el
+      trabajo final de cada cofradía (Padlet + sustentación oral).
+  ============================================================================
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+  /* ==========================================================================
+     1. TOKENS DE DISEÑO (idénticos al resto de la aplicación)
+     ========================================================================== */
+  :root{
+    --wood-dark:   #201207;
+    --wood-mid:    #3a2513;
+    --cork:        #c8a066;
+    --paper:       #eee0bd;
+    --paper-2:     #e4d3a8;
+    --paper-edge:  #cbb181;
+    --ink:         #2c2013;
+    --ink-soft:    #5c4a30;
+    --red-string:  #9c2a20;
+    --brass:       #c79a53;
+    --warn:        #b85b22;
+    --shadow:      rgba(20,12,4,0.55);
+    --tap-min:     44px;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0; padding:0; min-height:100%;
+    background: var(--wood-dark);
+    color: var(--ink);
+    font-family:'Courier Prime', 'Courier New', monospace;
+    font-size:16px;
+    touch-action:manipulation;
+    -webkit-text-size-adjust:100%;
+  }
+
+  .grain-overlay{
+    position:fixed; inset:0; pointer-events:none; z-index:999;
+    opacity:.06; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ==========================================================================
+     2. ESCRITORIO / MARCO — base MÓVIL
+     ========================================================================== */
+  .desk{
+    max-width:1200px; margin:0 auto; padding:1.25rem .85rem 3rem;
+    background:
+      radial-gradient(ellipse at top, rgba(255,255,255,.04), transparent 60%),
+      linear-gradient(180deg, var(--wood-mid), var(--wood-dark));
+  }
+
+  .archive-header{
+    position:relative;
+    max-width:880px; margin:0 auto 1.5rem;
+    background: var(--paper);
+    border:1px solid var(--paper-edge);
+    border-radius: 2px 8px 3px 10px / 6px 2px 10px 3px;
+    padding:1.5rem 1.25rem 1.25rem;
+    box-shadow: 0 12px 24px var(--shadow), inset 0 0 40px rgba(120,90,40,.12);
+    text-align:center;
+  }
+  .tape{ position:absolute; width:70px; height:22px; top:-10px; background:rgba(232,222,190,.6); box-shadow:0 2px 3px rgba(0,0,0,.35); }
+  .tape-left{ left:20px; transform:rotate(-7deg); }
+  .tape-right{ right:20px; transform:rotate(6deg); }
+
+  .eyebrow{ font-family:'Special Elite', monospace; letter-spacing:.14em; font-size:.68rem; color:var(--ink-soft); margin:.25rem 0 .55rem; }
+  .archive-header h1{ font-family:'Special Elite', monospace; font-size:clamp(1.25rem, 6vw, 2.1rem); margin:0 0 .75rem; color:var(--ink); text-shadow:1px 1px 0 rgba(255,255,255,.25); line-height:1.2; }
+  .role-briefing{ font-size:.92rem; line-height:1.6; color:var(--ink); max-width:640px; margin:0 auto .7rem; }
+  .instructions{ font-family:'Kalam', cursive; font-size:1rem; color:var(--red-string); margin:0; }
+
+  /* ---- Tablero principal (corcho) ---- */
+  .board{
+    position:relative;
+    background-color:var(--cork);
+    background-image:
+      repeating-linear-gradient(45deg, rgba(90,62,26,.10) 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(-45deg, rgba(90,62,26,.10) 0 2px, transparent 2px 7px),
+      radial-gradient(circle at 18% 22%, rgba(255,255,255,.10), transparent 45%);
+    border-radius:6px;
+    box-shadow: inset 0 0 60px rgba(40,25,8,.55), 0 14px 30px var(--shadow);
+    padding:1.5rem .9rem 1.5rem;
+  }
+
+  .workspace{ max-width:680px; margin:0 auto; display:flex; flex-direction:column; gap:1.5rem; }
+
+  /* ==========================================================================
+     3. PANEL DE REGLAS DE LA COFRADÍA
+     ========================================================================== */
+  .rules-card{
+    position:relative; background:var(--paper-2);
+    border:1px solid var(--paper-edge);
+    border-radius:4px 10px 4px 10px / 8px 4px 8px 4px;
+    padding:1.5rem 1.1rem 1.3rem;
+    box-shadow:0 14px 22px rgba(0,0,0,.4);
+  }
+  .case-tab{ position:absolute; top:-15px; left:1rem; background:#3a2510; color:#e9d6a5; font-family:'Special Elite', monospace; font-size:.64rem; letter-spacing:.07em; padding:.3rem .65rem; clip-path:polygon(6% 0,94% 0,100% 100%,0% 100%); }
+  .case-pin{ position:absolute; top:-11px; right:1.3rem; width:16px; height:16px; border-radius:50%; background:radial-gradient(circle at 30% 30%, #f0a99a, var(--red-string) 70%); box-shadow:0 2px 4px rgba(0,0,0,.5); }
+
+  .rules-title{ font-family:'Special Elite', monospace; font-size:1.05rem; margin:.6rem 0 .5rem; color:var(--ink); text-align:center; }
+  .rules-lead{ font-size:.86rem; line-height:1.55; color:var(--ink-soft); text-align:center; margin:0 0 1.2rem; }
+
+  .rule-item{
+    display:flex; gap:.8rem; align-items:flex-start;
+    padding:.9rem 0; border-top:1px dashed var(--paper-edge);
+  }
+  .rule-item:first-of-type{ border-top:none; }
+  .rule-item__index{
+    flex-shrink:0; width:32px; height:32px; border-radius:50%;
+    background:var(--ink); color:var(--paper);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Special Elite', monospace; font-size:.72rem;
+  }
+  .rule-item__title{ font-family:'Special Elite', monospace; font-size:.86rem; margin:0 0 .35rem; color:var(--ink); }
+  .rule-item__desc{ font-size:.84rem; line-height:1.55; margin:0; color:var(--ink); }
+
+  .role-badges{ display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.6rem; }
+  .role-badge{
+    display:flex; flex-direction:column; line-height:1.25;
+    background:var(--paper); border:1px solid var(--paper-edge);
+    border-radius:4px; padding:.4rem .6rem;
+    font-family:'Courier Prime', monospace; font-size:.76rem; color:var(--ink);
+  }
+  .role-badge small{ font-family:'Special Elite', monospace; font-size:.6rem; letter-spacing:.04em; color:var(--ink-soft); margin-top:.15rem; }
+
+  /* ==========================================================================
+     4. TERMINAL DE SEGURIDAD
+     ========================================================================== */
+  .terminal{
+    position:relative;
+    background:#161109; border:3px solid var(--brass);
+    border-radius:8px; padding:1.3rem 1.1rem 1.4rem;
+    box-shadow:0 16px 30px rgba(0,0,0,.5), inset 0 0 30px rgba(0,0,0,.6);
+  }
+  .terminal__header{ display:flex; align-items:center; gap:.5rem; margin-bottom:.9rem; }
+  .terminal__dot{ width:10px; height:10px; border-radius:50%; background:#5c4a30; }
+  .terminal__dot:nth-child(1){ background:#a3453b; }
+  .terminal__dot:nth-child(2){ background:#c79a53; }
+  .terminal__dot:nth-child(3){ background:#5c8a5c; }
+  .terminal__title{
+    font-family:'Special Elite', monospace; font-size:.85rem; letter-spacing:.06em;
+    color:#e6f4e6; margin:0 0 0 .3rem;
+  }
+
+  .terminal__prompt{
+    font-family:'Courier Prime', monospace; font-size:.86rem; line-height:1.55;
+    color:#8fe6a6; margin:0 0 1rem;
+  }
+  .terminal__prompt::before{ content:"> "; color:#5c8a5c; }
+  .terminal__prompt::after{
+    content:"█"; display:inline-block; margin-left:.15rem;
+    animation:blink 1s steps(1) infinite; color:#8fe6a6;
+  }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  .terminal__label{
+    display:block; font-family:'Special Elite', monospace; font-size:.68rem;
+    letter-spacing:.08em; color:#c9b98a; margin:0 0 .4rem;
+  }
+  .terminal__row{ display:flex; flex-direction:column; gap:.7rem; }
+  .terminal__input{
+    width:100%; min-height:var(--tap-min);
+    background:#0d0a06; border:2px solid #4a3a22; border-radius:4px;
+    padding:.7rem .8rem; color:#c9f7d4;
+    font-family:'Courier Prime', monospace; font-size:1rem; letter-spacing:.08em;
+    text-transform:uppercase;
+  }
+  .terminal__input::placeholder{ color:#4f6b52; letter-spacing:.05em; text-transform:none; }
+  .terminal__input:focus-visible{ outline:2px solid #8fe6a6; outline-offset:1px; }
+  .terminal__input.shake{ animation:shake .5s ease; border-color:var(--warn); }
+
+  @keyframes shake{
+    10%,90%{ transform:translateX(-1px); }
+    20%,80%{ transform:translateX(3px); }
+    30%,50%,70%{ transform:translateX(-6px); }
+    40%,60%{ transform:translateX(6px); }
+  }
+
+  .terminal__btn{ width:100%; }
+
+  /* ==========================================================================
+     5. NOTA DE ARCHIVO — retroalimentación "fail smart" (idéntica al resto)
+     ========================================================================== */
+  .note-backdrop{ position:fixed; inset:0; background:rgba(10,6,2,.6); display:none; align-items:center; justify-content:center; z-index:300; padding:1rem; }
+  .note-backdrop.show{ display:flex; }
+  .archive-note{ position:relative; max-width:420px; width:100%; background:var(--paper); border:1px solid var(--paper-edge); border-radius:2px 8px 3px 10px / 6px 2px 10px 3px; padding:1.8rem 1.4rem 1.3rem; box-shadow:0 20px 40px rgba(0,0,0,.6); transform:rotate(-1deg); max-height:85vh; overflow-y:auto; }
+  .note-pin{ position:absolute; top:-14px; left:50%; transform:translateX(-50%); width:18px; height:18px; border-radius:50%; background:radial-gradient(circle at 30% 30%, #e2b45c, var(--brass) 70%); box-shadow:0 2px 4px rgba(0,0,0,.55); }
+  .archive-note h3{ font-family:'Special Elite', monospace; font-size:1rem; margin:0 0 .7rem; color:var(--red-string); text-align:center; }
+  .archive-note p{ font-family:'Kalam', cursive; font-size:1.08rem; line-height:1.5; color:var(--ink); margin:0 0 1.1rem; }
+  .btn-ink{ display:flex; align-items:center; justify-content:center; min-height:var(--tap-min); margin:0 auto; padding:.55rem 1.2rem; background:var(--ink); color:var(--paper); font-family:'Special Elite', monospace; font-size:.8rem; border:none; border-radius:4px; cursor:pointer; letter-spacing:.03em; transition:transform .12s ease, background .15s ease; }
+  .btn-ink:hover{ background:#463420; }
+  .btn-ink:active{ transform:scale(.97); }
+  .btn-ink:focus-visible{ outline:3px solid var(--red-string); outline-offset:2px; }
+
+  /* ==========================================================================
+     6. VICTORIA ÉPICA (completion-banner, idéntico al resto + sello final)
+     ========================================================================== */
+  .completion-banner{ position:fixed; inset:0; background:rgba(10,6,2,.78); display:none; align-items:center; justify-content:center; z-index:400; padding:1.1rem; }
+  .completion-banner.show{ display:flex; }
+  .completion-inner{ max-width:540px; max-height:85vh; overflow-y:auto; background:var(--paper); border:1px solid var(--paper-edge); border-radius:6px; padding:2.1rem 1.7rem; text-align:center; box-shadow:0 25px 50px rgba(0,0,0,.6); }
+  .completion-inner h2{ font-family:'Special Elite', monospace; color:var(--red-string); margin:0 0 .8rem; font-size:1.4rem; }
+  .completion-inner p{ line-height:1.6; margin:0 0 1.3rem; }
+
+  .stamp{ display:inline-block; margin:.2rem 0 1.1rem; padding:.25rem .7rem; border:2px solid var(--red-string); border-radius:3px; color:var(--red-string); font-family:'Special Elite', monospace; font-size:.75rem; letter-spacing:.06em; transform:rotate(-8deg); animation:stampIn .4s ease-out; }
+  @keyframes stampIn{ 0%{ transform:scale(3) rotate(-16deg); opacity:0; } 60%{ transform:scale(.9) rotate(-7deg); opacity:1; } 100%{ transform:scale(1) rotate(-8deg); opacity:1; } }
+
+  .board-footer{ text-align:center; margin-top:1.75rem; color:#e9d6a5; }
+  .folio{ font-size:.7rem; opacity:.6; margin-top:.4rem; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+  }
+
+  @media (hover:hover) and (pointer:fine){
+    .btn-ink:hover{ transform:translateY(-1px); }
+  }
+
+  /* ==========================================================================
+     7. PUNTO DE QUIEBRE ÚNICO → ESCRITORIO
+     ========================================================================== */
+  @media (min-width:769px){
+    .desk{ padding:2rem 1.25rem 3.5rem; }
+    .archive-header{ padding:1.75rem 2rem 1.5rem; margin-bottom:2.25rem; }
+    .tape{ width:90px; height:28px; top:-12px; }
+    .tape-left{ left:36px; }
+    .tape-right{ right:36px; }
+    .eyebrow{ font-size:.72rem; letter-spacing:.18em; }
+    .archive-header h1{ font-size:clamp(1.5rem, 3.6vw, 2.1rem); }
+    .role-briefing{ font-size:.95rem; }
+    .instructions{ font-size:.95rem; }
+
+    .board{ padding:2.2rem 1.75rem; }
+    .workspace{ gap:1.9rem; }
+
+    .rules-card{ padding:1.9rem 1.6rem 1.6rem; }
+    .rules-title{ font-size:1.15rem; }
+
+    .terminal{ padding:1.6rem 1.6rem 1.7rem; }
+    .terminal__row{ flex-direction:row; }
+    .terminal__input{ flex:1; }
+    .terminal__btn{ width:auto; flex-shrink:0; padding-left:1.6rem; padding-right:1.6rem; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="grain-overlay" aria-hidden="true"></div>
+
+  <div class="desk">
+
+    <!-- ============================ ENCABEZADO ============================ -->
+    <header class="archive-header">
+      <div class="tape tape-left" aria-hidden="true"></div>
+      <div class="tape tape-right" aria-hidden="true"></div>
+      <p class="eyebrow">CONFIDENCIAL · FASE V · SÍNTESIS FINAL</p>
+      <h1>Archivo Central: La Sala de Cofradías</h1>
+      <p class="role-briefing">
+        La investigación ha concluido. Los expedientes de las cuatro Fases están reconstruidos.
+        Ahora corresponde a cada <strong>Cofradía</strong> reunir sus hallazgos, ponerlos a prueba
+        frente a sus pares y sustentarlos ante el Game Master, para recibir la Clave de
+        Desclasificación que cierra definitivamente el Archivo Central de Memoria.
+      </p>
+      <p class="instructions">Complete el protocolo en clase y luego ingrese la clave en la Terminal de Seguridad.</p>
+    </header>
+
+    <!-- ============================== TABLERO ============================== -->
+    <main class="board" id="board">
+      <section class="workspace">
+
+        <!-- ===================== REGLAS DE LA COFRADÍA ===================== -->
+        <article class="rules-card">
+          <div class="case-tab">PROTOCOLO FINAL</div>
+          <span class="case-pin" aria-hidden="true"></span>
+          <h2 class="rules-title">Reglas de la Cofradía</h2>
+          <p class="rules-lead">Cuatro etapas separan a su cofradía de la Clave de Desclasificación.</p>
+
+          <div class="rule-item">
+            <span class="rule-item__index">01</span>
+            <div class="rule-item__body">
+              <h3 class="rule-item__title">Roles Asimétricos</h3>
+              <p class="rule-item__desc">Cada integrante de la cofradía asume una función distinta y complementaria:</p>
+              <div class="role-badges">
+                <span class="role-badge">Archivista <small>Historia</small></span>
+                <span class="role-badge">Filósofo <small>Ética</small></span>
+                <span class="role-badge">Comunicador Digital <small>Narrativa Audiovisual</small></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="rule-item">
+            <span class="rule-item__index">02</span>
+            <div class="rule-item__body">
+              <h3 class="rule-item__title">Muro de Desclasificación</h3>
+              <p class="rule-item__desc">Publiquen la línea de tiempo y el portafolio final de la investigación en el Padlet del curso, disponible para todas las cofradías.</p>
+            </div>
+          </div>
+
+          <div class="rule-item">
+            <span class="rule-item__index">03</span>
+            <div class="rule-item__body">
+              <h3 class="rule-item__title">Auditoría Cruzada</h3>
+              <p class="rule-item__desc">Evalúen el trabajo de otras dos cofradías: reconozcan un acierto analítico de cada una y formulen un dilema histórico crítico que deban responder.</p>
+            </div>
+          </div>
+
+          <div class="rule-item">
+            <span class="rule-item__index">04</span>
+            <div class="rule-item__body">
+              <h3 class="rule-item__title">La Victoria Épica</h3>
+              <p class="rule-item__desc">Sustenten su informe ante el Game Master (el docente). Al aprobar la defensa, recibirán la Clave de Desclasificación final.</p>
+            </div>
+          </div>
+        </article>
+
+        <!-- ===================== TERMINAL DE SEGURIDAD ===================== -->
+        <section class="terminal" aria-labelledby="terminalTitle">
+          <div class="terminal__header" aria-hidden="true">
+            <span class="terminal__dot"></span>
+            <span class="terminal__dot"></span>
+            <span class="terminal__dot"></span>
+            <h2 id="terminalTitle" class="terminal__title">Terminal de Seguridad</h2>
+          </div>
+          <p class="terminal__prompt">Ingrese la Clave de Desclasificación entregada por el Game Master</p>
+
+          <label class="terminal__label" for="passwordInput">Clave de acceso</label>
+          <div class="terminal__row">
+            <input type="text" id="passwordInput" class="terminal__input"
+                   placeholder="CLAVE DE ACCESO" autocomplete="off" spellcheck="false"
+                   autocapitalize="characters">
+            <button type="button" id="validateBtn" class="btn-ink terminal__btn">Validar Acceso</button>
+          </div>
+        </section>
+
+      </section>
+    </main>
+
+    <footer class="board-footer">
+      <p class="folio">F. Fase V · Archivo Nacional de la Memoria (simulación educativa)</p>
+    </footer>
+  </div>
+
+  <!-- ===================== NOTA DE ARCHIVO (fail-smart) ===================== -->
+  <div class="note-backdrop" id="noteBackdrop">
+    <div class="archive-note" role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+      <span class="note-pin" aria-hidden="true"></span>
+      <h3 id="noteTitle">Nota de Archivo</h3>
+      <p id="noteText"></p>
+      <button id="noteClose" class="btn-ink">Entendido, reviso de nuevo</button>
+    </div>
+  </div>
+
+  <!-- ========================= VICTORIA ÉPICA ========================= -->
+  <div class="completion-banner" id="completionBanner">
+    <div class="completion-inner">
+      <h2>Victoria Épica</h2>
+      <span class="stamp">CASO CERRADO</span>
+      <p>
+        Investigadores: han completado el recorrido íntegro del Archivo Central de Memoria.
+        Reconstruyeron sus causas estructurales, identificaron a sus actores, comprendieron su
+        impacto humano y territorial, y evaluaron los caminos hacia la verdad, la justicia y la
+        no repetición. Comprender la complejidad de este conflicto —sin simplificarlo ni
+        negarlo— es, en sí mismo, un aporte a la memoria de la nación.
+      </p>
+      <button id="returnHubBtn" class="btn-ink">Cerrar Archivo (Volver al Mapa)</button>
+    </div>
+  </div>
+
+<script>
+/* ============================================================================
+   REFERENCIAS DOM
+   ============================================================================ */
+const passwordInput    = document.getElementById('passwordInput');
+const validateBtn      = document.getElementById('validateBtn');
+const noteBackdrop     = document.getElementById('noteBackdrop');
+const noteText         = document.getElementById('noteText');
+const noteClose        = document.getElementById('noteClose');
+const completionBanner = document.getElementById('completionBanner');
+const returnHubBtn     = document.getElementById('returnHubBtn');
+
+const ACCESS_CODE = 'MEMORIA VIVA';
+
+/* ============================================================================
+   NOTA DE ARCHIVO — modal "fail smart" (idéntico al resto de la aplicación)
+   ============================================================================ */
+function showNote(text){
+  noteText.textContent = text;
+  noteBackdrop.classList.add('show');
+  noteClose.focus();
+}
+function hideNote(){ noteBackdrop.classList.remove('show'); }
+noteClose.addEventListener('click', hideNote);
+noteBackdrop.addEventListener('click', e => { if(e.target === noteBackdrop) hideNote(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape') hideNote(); });
+
+/* ============================================================================
+   TERMINAL DE SEGURIDAD — validación de la Clave de Desclasificación
+   ============================================================================ */
+function validateAccess(){
+  const value = passwordInput.value.trim().toUpperCase();
+
+  if(value === ACCESS_CODE){
+    handleSuccess();
+  } else {
+    handleFailure();
+  }
+}
+
+function handleFailure(){
+  passwordInput.classList.remove('shake');
+  void passwordInput.offsetWidth; // fuerza reflow para poder repetir la animación
+  passwordInput.classList.add('shake');
+  setTimeout(() => passwordInput.classList.remove('shake'), 500);
+
+  showNote('Acceso denegado. Debes publicar tu informe, auditar a dos cofradías y sustentar tu defensa ante el Game Master para obtener la clave de desclasificación final.');
+}
+
+function handleSuccess(){
+  passwordInput.disabled = true;
+  validateBtn.disabled = true;
+  completionBanner.classList.add('show');
+  syncCompletionToHub();
+}
+
+validateBtn.addEventListener('click', validateAccess);
+passwordInput.addEventListener('keydown', e => {
+  if(e.key === 'Enter') validateAccess();
+});
+
+/* ============================================================================
+   SINCRONIZACIÓN CON EL MAPA GENERAL (Hub)
+   ============================================================================ */
+const HUB_STORAGE_KEY = 'archivoCentralMemoria.hubState';
+const HUB_NODE_ID = 'core-5';
+
+function syncCompletionToHub(){
+  try{
+    const raw = localStorage.getItem(HUB_STORAGE_KEY);
+    const stored = raw ? JSON.parse(raw) : { unlocked: [], completed: [], points: 0 };
+    const completed = new Set(Array.isArray(stored.completed) ? stored.completed : []);
+    const unlocked = new Set(Array.isArray(stored.unlocked) ? stored.unlocked : []);
+    completed.add(HUB_NODE_ID);
+    unlocked.add(HUB_NODE_ID);
+    localStorage.setItem(HUB_STORAGE_KEY, JSON.stringify({
+      unlocked: Array.from(unlocked),
+      completed: Array.from(completed),
+      points: completed.size
+    }));
+  } catch(err){
+    console.warn('No se pudo sincronizar el progreso con el Mapa General:', err);
+  }
+}
+
+/* ============================================================================
+   REGRESO AL MAPA GENERAL
+   ============================================================================ */
+returnHubBtn.addEventListener('click', () => {
+  window.location.href = 'index.html';
+});
+</script>
+</body>
+</html>

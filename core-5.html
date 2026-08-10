@@ -14,6 +14,11 @@
   Seguridad" donde el estudiante ingresa la Clave de Desclasificación que le
   entregó el Game Master (el docente) tras la sustentación presencial.
 
+  Novedad de esta versión: los tres roles de "Roles Asimétricos" (Archivista,
+  Analista, Comunicador Digital) son botones interactivos tipo acordeón —
+  al tocarlos, despliegan inline la descripción exacta de lo que ese rol
+  debe hacer dentro de la cofradía, sin necesidad de otro modal.
+
   Arquitectura:
     · Misma paleta de tokens, tipografías (Courier Prime / Special Elite /
       Kalam) y estética de corcho/papel de las Fases anteriores.
@@ -140,17 +145,46 @@
     display:flex; align-items:center; justify-content:center;
     font-family:'Special Elite', monospace; font-size:.72rem;
   }
+  .rule-item__body{ flex:1; min-width:0; }
   .rule-item__title{ font-family:'Special Elite', monospace; font-size:.86rem; margin:0 0 .35rem; color:var(--ink); }
   .rule-item__desc{ font-size:.84rem; line-height:1.55; margin:0; color:var(--ink); }
 
-  .role-badges{ display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.6rem; }
+  /* ---- Roles interactivos (acordeón) ---- */
+  .role-badges{ display:flex; flex-direction:column; gap:.5rem; margin-top:.7rem; }
+
   .role-badge{
-    display:flex; flex-direction:column; line-height:1.25;
+    display:flex; align-items:center; gap:.5rem; width:100%;
+    min-height:var(--tap-min); text-align:left;
     background:var(--paper); border:1px solid var(--paper-edge);
-    border-radius:4px; padding:.4rem .6rem;
-    font-family:'Courier Prime', monospace; font-size:.76rem; color:var(--ink);
+    border-radius:4px; padding:.55rem .7rem;
+    font-family:'Courier Prime', monospace; font-size:.82rem; color:var(--ink);
+    cursor:pointer;
+    transition: background .15s ease, border-color .15s ease, transform .1s ease;
   }
-  .role-badge small{ font-family:'Special Elite', monospace; font-size:.6rem; letter-spacing:.04em; color:var(--ink-soft); margin-top:.15rem; }
+  .role-badge__name{ font-weight:700; }
+  .role-badge__tag{
+    font-family:'Special Elite', monospace; font-size:.6rem; letter-spacing:.04em;
+    color:var(--ink-soft); margin-left:auto; white-space:nowrap;
+  }
+  .role-badge__chevron{
+    flex-shrink:0; font-size:.7rem; color:var(--ink-soft);
+    transition:transform .25s ease; margin-left:.2rem;
+  }
+  .role-badge:focus-visible{ outline:3px solid var(--red-string); outline-offset:2px; }
+  .role-badge:active{ transform:scale(.99); }
+  .role-badge--active{ border-color:var(--red-string); background:var(--paper); }
+  .role-badge--active .role-badge__chevron{ transform:rotate(180deg); color:var(--red-string); }
+
+  .role-desc{
+    max-height:0; opacity:0; overflow:hidden;
+    transition:max-height .32s ease, opacity .25s ease, margin .32s ease;
+  }
+  .role-desc.open{ max-height:260px; opacity:1; margin-top:.4rem; }
+  .role-desc p{
+    margin:0; font-size:.8rem; line-height:1.55; color:var(--ink);
+    background:rgba(255,255,255,.4); border-left:3px solid var(--red-string);
+    border-radius:2px; padding:.65rem .75rem;
+  }
 
   /* ==========================================================================
      4. TERMINAL DE SEGURIDAD
@@ -242,6 +276,7 @@
 
   @media (hover:hover) and (pointer:fine){
     .btn-ink:hover{ transform:translateY(-1px); }
+    .role-badge:hover{ border-color:var(--red-string); }
   }
 
   /* ==========================================================================
@@ -285,9 +320,10 @@
       <h1>Archivo Central: La Sala de Cofradías</h1>
       <p class="role-briefing">
         La investigación ha concluido. Los expedientes de las cuatro Fases están reconstruidos.
-        Ahora corresponde a cada <strong>Cofradía</strong> reunir sus hallazgos, ponerlos a prueba
-        frente a sus pares y sustentarlos ante el Game Master, para recibir la Clave de
-        Desclasificación que cierra definitivamente el Archivo Central de Memoria.
+        Ahora corresponde a cada <strong>Cofradía</strong> reunir sus hallazgos, comprender el rol
+        que cada integrante asume dentro del equipo, y ponerlos a prueba frente a sus pares antes
+        de sustentarlos ante el Game Master para recibir la Clave de Desclasificación que cierra
+        definitivamente el Archivo Central de Memoria.
       </p>
       <p class="instructions">Complete el protocolo en clase y luego ingrese la clave en la Terminal de Seguridad.</p>
     </header>
@@ -307,11 +343,41 @@
             <span class="rule-item__index">01</span>
             <div class="rule-item__body">
               <h3 class="rule-item__title">Roles Asimétricos</h3>
-              <p class="rule-item__desc">Cada integrante de la cofradía asume una función distinta y complementaria:</p>
-              <div class="role-badges">
-                <span class="role-badge">Archivista <small>Historia</small></span>
-                <span class="role-badge">Filósofo <small>Ética</small></span>
-                <span class="role-badge">Comunicador Digital <small>Narrativa Audiovisual</small></span>
+              <p class="rule-item__desc">Cada integrante de la cofradía asume una función distinta y complementaria. Toque cada rol para ver su descripción:</p>
+
+              <div class="role-badges" id="roleBadges">
+                <div class="role-item">
+                  <button type="button" class="role-badge" data-role="archivista" aria-expanded="false" aria-controls="desc-archivista">
+                    <span class="role-badge__name">Archivista</span>
+                    <span class="role-badge__tag">Historia</span>
+                    <span class="role-badge__chevron" aria-hidden="true">▾</span>
+                  </button>
+                  <div class="role-desc" id="desc-archivista" aria-hidden="true">
+                    <p>Responsable del rigor histórico y la documentación: verifica fechas, fuentes y la precisión de cada hecho citado en el portafolio final. Nada se publica en el Muro de Desclasificación sin su visto bueno.</p>
+                  </div>
+                </div>
+
+                <div class="role-item">
+                  <button type="button" class="role-badge" data-role="analista" aria-expanded="false" aria-controls="desc-analista">
+                    <span class="role-badge__name">Analista</span>
+                    <span class="role-badge__tag">Contexto y Ética</span>
+                    <span class="role-badge__chevron" aria-hidden="true">▾</span>
+                  </button>
+                  <div class="role-desc" id="desc-analista" aria-hidden="true">
+                    <p>Gestiona el contexto causal y las implicaciones éticas del hallazgo: conecta causas, consecuencias y responsabilidades, y anticipa los dilemas morales que la cofradía deberá defender ante sus auditores.</p>
+                  </div>
+                </div>
+
+                <div class="role-item">
+                  <button type="button" class="role-badge" data-role="comunicador" aria-expanded="false" aria-controls="desc-comunicador">
+                    <span class="role-badge__name">Comunicador Digital</span>
+                    <span class="role-badge__tag">Narrativa Audiovisual</span>
+                    <span class="role-badge__chevron" aria-hidden="true">▾</span>
+                  </button>
+                  <div class="role-desc" id="desc-comunicador" aria-hidden="true">
+                    <p>Controla el empaquetamiento visual del trabajo: diseño, imágenes, línea de tiempo y narrativa audiovisual con la que la cofradía presenta su investigación en el Padlet del curso.</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -405,8 +471,39 @@ const noteText         = document.getElementById('noteText');
 const noteClose        = document.getElementById('noteClose');
 const completionBanner = document.getElementById('completionBanner');
 const returnHubBtn     = document.getElementById('returnHubBtn');
+const roleBadges       = document.querySelectorAll('.role-badge');
 
 const ACCESS_CODE = 'MEMORIA VIVA';
+
+/* ============================================================================
+   ROLES INTERACTIVOS — acordeón: toca un rol para ver su descripción exacta.
+   Solo un rol permanece abierto a la vez, para mantener el panel "sleek".
+   ============================================================================ */
+function toggleRole(btn){
+  const desc = document.getElementById(btn.getAttribute('aria-controls'));
+  const isOpen = btn.classList.contains('role-badge--active');
+
+  roleBadges.forEach(other => {
+    other.classList.remove('role-badge--active');
+    other.setAttribute('aria-expanded', 'false');
+    const otherDesc = document.getElementById(other.getAttribute('aria-controls'));
+    if(otherDesc){
+      otherDesc.classList.remove('open');
+      otherDesc.setAttribute('aria-hidden', 'true');
+    }
+  });
+
+  if(!isOpen){
+    btn.classList.add('role-badge--active');
+    btn.setAttribute('aria-expanded', 'true');
+    desc.classList.add('open');
+    desc.setAttribute('aria-hidden', 'false');
+  }
+}
+
+roleBadges.forEach(btn => {
+  btn.addEventListener('click', () => toggleRole(btn));
+});
 
 /* ============================================================================
    NOTA DE ARCHIVO — modal "fail smart" (idéntico al resto de la aplicación)
@@ -467,8 +564,10 @@ function syncCompletionToHub(){
     const stored = raw ? JSON.parse(raw) : { unlocked: [], completed: [], points: 0 };
     const completed = new Set(Array.isArray(stored.completed) ? stored.completed : []);
     const unlocked = new Set(Array.isArray(stored.unlocked) ? stored.unlocked : []);
+
     completed.add(HUB_NODE_ID);
     unlocked.add(HUB_NODE_ID);
+
     localStorage.setItem(HUB_STORAGE_KEY, JSON.stringify({
       unlocked: Array.from(unlocked),
       completed: Array.from(completed),
